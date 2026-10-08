@@ -71,6 +71,10 @@ Only `copilotInteractions` is required. Turn the others on in `config.json` (ste
 | `gold` | Exactly the tables the semantic models read |
 | `ops` | Settings, run log, backfill ledger, which layer each table went to |
 
+## How the ingesters work
+
+They fetch from Microsoft in parallel (several Purview audit queries and Graph reports at once, backing off when throttled) and save each finished window, so a failed run resumes instead of starting over. Spark then parses and flattens the nested JSON column-wise across the cluster, not row by row, and writes Delta with `MERGE` on stable keys, so reruns never duplicate. Details: [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Where the notebook code comes from
 
 The ingesters, processor and model definitions are not written here. `npm run all` generates them from a fixed commit of the open-source [ValueLens for Microsoft Copilot](https://github.com/microsoft/ValueLens-for-Microsoft-Copilot) Fabric installer, so the extract logic is the same tested code. This repo adds the `Lake_*` notebooks that set up the Lakehouse, check credentials, sort tables into layers, deploy the models and run everything in order.

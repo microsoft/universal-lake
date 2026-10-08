@@ -22,17 +22,28 @@ Snapshot sources (licences, org data, feedback, uploads, Azure AI's 90 days) rel
 
 ## Parameters
 
+These are the only ones you normally touch:
+
+| Parameter | Default | When to change it |
+|---|---|---|
+| `RUN_MODE` | `incremental` | `first_load` once at the start; `backfill` for more history or to fill a gap |
+| `RUN_ID` + `RERUN_FAILED` | blank / `False` | To retry a run: that run's ID and `True`. Only the steps that didn't succeed run. |
+| `STEPS` | blank | To run one step alone, e.g. `'org_data'` |
+| `DRY_RUN` | `False` | `True` to print the plan and date ranges without running anything |
+
+<details>
+<summary>Advanced parameters (leave as is)</summary>
+
 | Parameter | Default | Meaning |
 |---|---|---|
-| `RUN_MODE` | `incremental` | See above |
-| `BACKFILL_DAYS` | `0` | `0` = the value from `config.json`. Max 180. |
+| `BACKFILL_DAYS` | `0` | `0` = `backfillDays` from `config.json`. Max 180. |
 | `SCALE`, `MODULES` | blank | Blank = the values from `config.json` |
-| `STEPS` / `SKIP_STEPS` | blank | Run only / leave out these steps, e.g. `'audit,processor,promote'` |
+| `SKIP_STEPS` | blank | Leave out these steps |
 | `START_FROM` | blank | Skip every step before this one |
-| `RUN_ID` + `RERUN_FAILED` | blank / `False` | Re-run only the steps of that run that didn't succeed |
 | `CONTINUE_ON_ERROR` | `True` | Keep going after a non-critical failure |
-| `AUTO_RESUME` | `8` | Times a paused audit step is resumed automatically before the run moves on |
-| `DRY_RUN` | `False` | Print the plan and stop |
+| `AUTO_RESUME` | `8` | Extra automatic passes for an audit backfill that hits its time budget |
+
+</details>
 
 `audit`, `licensed_users`, `processor` and `promote` are **critical**: if one fails, the rest of the run is skipped. After them come `refresh_universal`, `refresh_consumption`, `refresh_agent_evaluator` and `data_check`. Steps for sources you didn't pick show as `SKIP`.
 

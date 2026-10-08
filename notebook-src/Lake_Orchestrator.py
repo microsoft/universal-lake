@@ -16,21 +16,23 @@
 # | `incremental` | since last load + `LOOKBACK_DAYS` | merge | last 14 days | merge | the daily run |
 #
 # Re-running: see `08-orchestrate/RERUNS.md`. In short: `RERUN_FAILED = True` re-runs only the steps of `RUN_ID`
-# that did not succeed; `START_FROM = '<step>'` skips everything before that step.
+# that did not succeed.
 
 # %% [parameters]
-RUN_MODE = 'incremental'       # 'first_load', 'backfill' or 'incremental'
-BACKFILL_DAYS = 0              # 0 = use backfill_days from ops.config (set by Lake_Init); max 180
-SCALE = ''                     # blank = ops.config scale; 'standard' or 'large'
-MODULES = ''                   # blank = ops.config modules
-STEPS = ''                     # comma-separated step names to run (blank = all applicable)
+RUN_MODE = 'incremental'       # 'first_load' (first run), 'backfill' (more history / fix a gap) or 'incremental' (daily)
+RUN_ID = ''                    # to retry a run: its run_id ...
+RERUN_FAILED = False           # ... and True: runs only the steps of RUN_ID that did not succeed
+STEPS = ''                     # blank = everything; or e.g. 'org_data' to run just that step
+DRY_RUN = False                # True = print the plan and stop
+
+# Advanced: leave as is unless you have a reason
+BACKFILL_DAYS = 0              # 0 = backfillDays from config.json; max 180
+SCALE = ''                     # blank = scale from config.json
+MODULES = ''                   # blank = modules from config.json
 SKIP_STEPS = ''                # comma-separated step names to leave out
 START_FROM = ''                # skip every step before this one
-RUN_ID = ''                    # blank = new run; set it with RERUN_FAILED to resume that run
-RERUN_FAILED = False           # with RUN_ID: run only the steps of RUN_ID whose last status is not 'succeeded'
-CONTINUE_ON_ERROR = True       # non-critical step failures are logged and the run continues
-AUTO_RESUME = 8                # a step that pauses on its time budget (audit) is resumed automatically up to this many more times
-DRY_RUN = False                # print the plan and stop
+CONTINUE_ON_ERROR = True       # non-critical failures are logged and the run continues
+AUTO_RESUME = 8                # extra automatic passes for an audit backfill that hits its time budget
 
 # %%
 %run lake_ops
