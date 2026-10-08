@@ -16,7 +16,7 @@
 # |---|---|---|
 # | Find | Looks the model up by the ID in `ops.config`, then by display name | n/a |
 # | Create / update | Creates the model, or replaces its definition (`updateDefinition`). Updating clears its data until the refresh | Fix the reported error and run again. Nothing else has changed yet |
-# | Connect | `CONNECTION_MODE`: `spn` creates or updates a SQL connection signed in as the app (secret from Key Vault, or `CLIENT_SECRET`); `existing` uses `CONNECTION_ID`; `skip` leaves it to you | Bind it yourself: model **Settings > Gateway and cloud connections** |
+# | Connect | `CONNECTION_MODE`: `signin` (default) uses your own sign-in, given once on the model's settings page; `spn` creates a SQL connection signed in as the app; `existing` uses `CONNECTION_ID` | `signin`: the notebook tells you exactly where to sign in, then rerun with `DEPLOY = False` |
 # | Refresh | Full refresh, then waits for it | `ops.run_log` holds the service's error; usually a missing gold table or the connection |
 # | Probe | Counts rows in each model table through DAX | Zero rows means the gold table is empty: check the ingest for that source |
 #
@@ -26,7 +26,7 @@
 RUN_ID = ''
 MODELS = 'universal,consumption,agentEvaluator'   # keys to deploy; missing definition files are skipped
 DEFINITIONS_DIR = '/lakehouse/default/Files/universal_lake/models'
-CONNECTION_MODE = 'spn'              # 'spn', 'existing' or 'skip'
+CONNECTION_MODE = 'signin'           # 'signin' (you sign in once, no admin settings), 'spn' (the app) or 'existing'
 CONNECTION_ID = ''                   # for CONNECTION_MODE = 'existing'
 CONNECTION_NAME = ''                 # blank: 'Universal Lake SQL <workspace id prefix>'
 DEPLOY = True                        # False: skip create/update and only connect, refresh and probe
@@ -80,13 +80,19 @@ def find_model(key, name):
 # %% [markdown]
 # ## Connection
 #
-# The models load the Lakehouse SQL endpoint in **Import** mode, the same as the installer. The
-# installer creates a new app secret for this connection; this notebook reuses the Key Vault secret instead, so
-# rotating that one secret is all the upkeep there is (rerun this notebook after rotating it).
+# The models load the Lakehouse SQL endpoint in **Import** mode, the same as the installer.
+#
+# * `signin` (default): the model reads the Lakehouse with **your** Microsoft Entra sign-in. The first refresh asks
+#   for it once: model **Settings > Data source credentials > Edit credentials > OAuth2 > Sign in**. Nothing for an
+#   admin to turn on and no workspace role for the app. Fabric keeps the sign-in alive as long as the model refreshes
+#   and you keep access; if you leave, someone else takes over the model and signs in again.
+# * `spn`: the model reads as the app, which suits unattended production. Needs the tenant setting *Service
+#   principals can use Fabric APIs* and the app as **Viewer** on the workspace. Reuses the Key Vault secret, so rerun
+#   this notebook with `DEPLOY = False` after rotating it.
 
 # %%
 def ensure_connection():
-    if CONNECTION_MODE == 'skip':
+    if CONNECTION_MODE in ('signin', 'skip'):
         return None
     if CONNECTION_MODE == 'existing':
         if not CONNECTION_ID:
@@ -97,7 +103,7 @@ def ensure_connection():
     elif cfg('key_vault_uri'):
         secret = notebookutils.credentials.getSecret(cfg('key_vault_uri'), cfg('secret_name', required=True))
     else:
-        raise ValueError('No Key Vault in ops.config and CLIENT_SECRET is blank. Set one, or use CONNECTION_MODE = "skip".')
+        raise ValueError('No Key Vault in ops.config and CLIENT_SECRET is blank. Set one, or use CONNECTION_MODE = "signin".')
     credentials = {
         'singleSignOnType': 'None', 'connectionEncryption': 'Encrypted', 'skipTestConnection': False,
         'credentials': {'credentialType': 'ServicePrincipal', 'tenantId': cfg('tenant_id', required=True),
@@ -191,12 +197,12 @@ for i, key in enumerate(keys, 1):
         model_id = model['id']
         cfg_set({f'model_id.{key}': model_id})
 
-        if CONNECTION_MODE != 'skip':
+        if CONNECTION_MODE in ('spn', 'existing'):
             connection_id = connection_id or ensure_connection()
             bind(model_id, connection_id)
             print(f'Bound to connection {connection_id}')
         else:
-            print('CONNECTION_MODE is skip: bind it under model Settings > Gateway and cloud connections, then rerun with DEPLOY=False.')
+            print('Reads the Lakehouse with your sign-in (CONNECTION_MODE = signin).')
 
         print('Relationships:')
         for r in bim['model'].get('relationships', []):
@@ -205,8 +211,16 @@ for i, key in enumerate(keys, 1):
         state = 'not refreshed'
         if REFRESH:
             print('Refreshing...')
-            state, detail = refresh(model_id)
+            try:
+                state, detail = refresh(model_id)
+            except Exception as e:
+                state, detail = 'Failed', {'error': str(e)}
             print(f'Refresh: {state}')
+            if state != 'Completed' and CONNECTION_MODE in ('signin', 'skip') and 'credential' in json.dumps(detail).lower():
+                raise RuntimeError(
+                    f'Sign in once: open https://app.powerbi.com/groups/{ws}/settings/datasets/{model_id} , '
+                    'then Data source credentials > Edit credentials > Authentication method OAuth2 > '
+                    'Sign in. Then rerun this notebook with DEPLOY = False. You do this once per model.')
             if state != 'Completed':
                 raise RuntimeError(f'Refresh {state}: {json.dumps(detail.get("serviceExceptionJson") or detail)[:3000]}')
             try:

@@ -51,20 +51,17 @@ If you take this route: keep workspace access to the people who need it, don't s
 
 | Needed | What | Where | Why |
 |---|---|---|---|
-| **Always** | *Service principals can use Fabric APIs* = **On** (whole org, or a security group containing the app) | Fabric > **Settings (gear) > Admin portal > Tenant settings > Developer settings** | The semantic models sign in to the Lakehouse SQL endpoint as the app. Without this, the model refresh fails. |
-| **Always** | App is **Viewer** on the workspace | Workspace > **Manage access > Add people or groups**, search the app name | Same: lets the app read the `gold` tables through the SQL endpoint. |
 | **Always** | *Display concealed user, group, and site names in all reports* = **Off** | Microsoft 365 admin center > **Settings > Org settings > Reports** | Otherwise usage reports return hashed IDs instead of names, and they won't join to `orgData`. |
 | Only for `azureAi` | App has **Reader**, **Cost Management Reader** and **Monitoring Reader** | Each Azure subscription > **Access control (IAM) > Add role assignment** | Reads Azure AI resources, their cost and their usage metrics. |
 | Only for `agentEvaluator` | App is an application user with role **Bot Transcript Viewer** | [Power Platform admin center](https://admin.powerplatform.microsoft.com) > environment > **Settings > Users + permissions > Application users > New app user** | Reads Copilot Studio conversation transcripts from Dataverse. |
 
-You don't need to turn on audit logging: it's on by default in Microsoft 365 tenants.
+You don't need to turn on audit logging: it's on by default in Microsoft 365 tenants. You also don't need any Fabric tenant setting or workspace role for the app: the ingesters call Microsoft Graph, not Fabric, and the semantic models read the Lakehouse with your own sign-in ([step 7](../07-semantic-model/README.md#run-it)).
 
 ## 2.4 Confirm before you continue
 
 - [ ] The app exists; I have its **tenant ID** and **client ID**.
 - [ ] Admin consent shows green ticks for every Graph permission I need.
 - [ ] The secret is in Key Vault and I have *Key Vault Secrets User* **— or —** I've knowingly chosen the `config.json` bypass and have the secret value.
-- [ ] *Service principals can use Fabric APIs* is on, and the app is **Viewer** on the workspace.
 - [ ] Concealed names in reports are off.
 - [ ] Only if used: `azureAi` has the three reader roles; `agentEvaluator` has the Dataverse application user.
 
@@ -79,7 +76,7 @@ az login --tenant <tenant-id>
 ./02-permissions/setup-app.ps1 -KeyVaultName <vault> -Modules copilotInteractions,orgData,m365Activity
 ```
 
-Other parameters: `-AppName`, `-SecretName`, `-SecretYears`, `-AzureSubscriptionIds`, `-SkipConsent` (prints a consent link for an admin), `-RotateSecret`. You still do the tenant setting, workspace Viewer and Dataverse steps by hand.
+Other parameters: `-AppName`, `-SecretName`, `-SecretYears`, `-AzureSubscriptionIds`, `-SkipConsent` (prints a consent link for an admin), `-RotateSecret`. You still do the concealed-names setting and the Dataverse application user by hand.
 
 ## When the secret expires
 
