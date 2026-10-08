@@ -1,13 +1,13 @@
 # Step 6: Process and promote
 
-Two steps turn the raw `dbo` tables into the layers the semantic models read.
+**Nothing to run here**: these two steps already ran at the end of your step 5 run. This page explains what they did and how to check it.
 
 | Step | Notebook | Does |
 |---|---|---|
 | `processor` | `Copilot_Audit_Log_Processor` | Classifies every audit event (app, agent, agent type), joins licences and agents, writes `dbo.copilot_interactions_curated` |
 | `promote` | `Lake_Promote_Medallion` | Copies every `dbo` table into **one** of `bronze`, `silver`, `gold` |
 
-Run them from `Lake_Orchestrator`: `STEPS = 'processor,promote'`, `RUN_MODE = 'first_load'`, **Run all**. Run promote **after all ingesters**, so it picks up their latest data.
+The orchestrator runs `promote` after all ingesters, so it picks up their latest data. To run one of them again on its own: `Lake_Orchestrator` with `STEPS = 'promote'` (or `'processor,promote'`).
 
 ## The processor
 

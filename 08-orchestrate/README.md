@@ -1,18 +1,12 @@
 # Step 8: Orchestrate
 
-`Lake_Orchestrator` runs every step from steps 5 and 6, in order, then refreshes the models and runs a data check. It's the same sequence as the installer's pipeline, but each step is logged separately, so you can see exactly what failed and re-run just that.
-
-## Your first full run
-
-1. Open `Lake_Orchestrator`. In the first cell set `RUN_MODE = 'first_load'` and `DRY_RUN = True`. **Run all**.
-   It prints the plan: each step, and how many days of history it will fetch. Check it.
-2. Set `DRY_RUN = False`. **Run all**. Note the `RUN_ID` it prints.
-3. If `audit` ends `paused` (big backfill), set `RUN_ID = '<that id>'`, `RERUN_FAILED = True` and run again. Repeat until it succeeds.
-4. If you haven't yet, run `Lake_Deploy_Models` ([step 7](../07-semantic-model/README.md)). Until then the refresh steps are skipped.
+You already ran `Lake_Orchestrator` once in step 5. From now on it's the daily job: each run loads what's new, processes and promotes it, refreshes the models and runs a data check. Each step is logged separately, so you can see exactly what failed and re-run just that.
 
 ## Schedule the daily run
 
-Open `Lake_Orchestrator` > **Run > Schedule** > once a day. Make sure the saved first cell has `RUN_MODE = 'incremental'` and `DRY_RUN = False` (the defaults), because schedules use the saved values.
+1. Open `Lake_Orchestrator` and set the first cell back to the defaults: `RUN_MODE = 'incremental'`, `DRY_RUN = False`, `STEPS`, `RUN_ID` blank, `RERUN_FAILED = False`. **Save** (schedules use the saved values).
+2. **Run all** once by hand. This time the refresh steps run too (step 7 is done), so check they say `succeeded`.
+3. **Run > Schedule** > once a day.
 
 Don't start a manual run while the scheduled one is running: they share `Files/_audit_staging`.
 

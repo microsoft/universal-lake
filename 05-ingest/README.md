@@ -1,20 +1,22 @@
 # Step 5: Ingest
 
-The ingesters pull from Graph, Azure, Dataverse and your uploaded CSVs into `dbo` tables. Run them through `Lake_Orchestrator` so every step is logged.
+One notebook, `Lake_Orchestrator`, runs every ingester for the sources you picked, in the right order, then processes and promotes the data (step 6). Every step is logged to `ops`.
 
-## How to run one step
+## Run it
 
 1. Open `Lake_Orchestrator`.
-2. In its first cell set `STEPS = 'audit'` (any step name below) and `RUN_MODE = 'first_load'`.
-3. **Run all**.
+2. In the first cell, change one line: `RUN_MODE = 'first_load'`.
+3. **Run all**. Note the `RUN_ID` it prints.
 
-Set `DRY_RUN = True` first if you want to see the plan and date ranges without running anything. To run everything in one go, leave `STEPS` blank; that's [step 8](../08-orchestrate/README.md).
+That's it. Leave the other settings as they are. The model refresh steps show `SKIP` for now; they start working after step 7.
 
-(You can also open an ingester notebook and **Run all** to watch each cell, but then nothing is logged to `ops`.)
+Optional: set `DRY_RUN = True` first to only print the plan (which steps, which date ranges) without running anything.
 
-## The steps, in order
+## What it runs, in order
 
-| # | `STEPS` name | What it loads | History | Module |
+You don't need to pick these; they run automatically. The names show up in the plan and in `ops.run_log`.
+
+| # | Step | What it loads | History | Module |
 |---|---|---|---|---|
 | 1 | `audit` | Every Copilot prompt and agent run | **First load / backfill**: last `backfillDays`. **Daily**: since the last load, re-reading a few days. | copilotInteractions |
 | 2 | `licensed_users` | Who has a Copilot licence | Latest snapshot | copilotInteractions |
@@ -27,7 +29,7 @@ Set `DRY_RUN = True` first if you want to see the plan and date ranges without r
 | 9 | `transcripts` | Copilot Studio transcripts | First load: `backfillDays`; daily: 14 days | agentEvaluator |
 | 10–12 | `azure_ai`, `studio`, `viva` | Azure AI cost; Studio and Cowork credits | Azure: 90 days; others: every uploaded file | consumption |
 
-On a first load run 1, 2 and 4 first (`STEPS = 'audit,licensed_users,processor'`), then the rest. Steps for sources you didn't pick are skipped.
+After these come `promote` ([step 6](../06-process/README.md)) and the model refreshes. Steps for sources you didn't pick show `SKIP`.
 
 **Workday only**: run `Copilot_Org_Data_Workday_Lander` by hand after uploading the extract, then `org_data`.
 
@@ -54,7 +56,7 @@ FROM ops.backfill_ledger ORDER BY recorded_at DESC LIMIT 20;
    WHERE run_id = '<run_id>' AND event = 'end' ORDER BY step_no;
    ```
 2. **401 / 403**: run `Lake_Validate_Credentials`; it names what's missing.
-3. **Timeout or `paused`**: run it again. Audit and transcripts resume.
-4. To retry only what failed: `RUN_ID = '<run_id>'`, `RERUN_FAILED = True`. More in [RERUNS.md](../08-orchestrate/RERUNS.md).
+3. **Retry only what failed** (also for a timeout or `paused`): in the first cell set `RUN_ID = '<run_id>'` and `RERUN_FAILED = True`, then **Run all**. Steps that already succeeded are skipped; audit and transcripts resume where they stopped.
+4. **Run just one step** (e.g. after fixing a permission): `STEPS = 'org_data'`. This is the only time you need `STEPS`. More in [RERUNS.md](../08-orchestrate/RERUNS.md).
 
 Next: [Step 6: Process and promote](../06-process/README.md)

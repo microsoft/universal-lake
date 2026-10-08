@@ -14,7 +14,7 @@ To review a model before deploying, open `out/models/<model>/relationships.txt` 
 
 ## Run it
 
-1. Make sure [step 6](../06-process/README.md) has run, so gold has data. Otherwise the refresh fails with *table … not found*.
+1. Make sure your [step 5](../05-ingest/README.md) run succeeded, so gold has data. Otherwise the refresh fails with *table … not found*.
 2. Open `Lake_Deploy_Models` > **Run all**.
 
 For each model it: finds or creates it, replaces its definition, connects it to the Lakehouse SQL endpoint as the app, refreshes it, and counts rows per table. A table with `0` rows means its ingester loaded nothing.

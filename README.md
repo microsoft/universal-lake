@@ -40,10 +40,10 @@ Do them in order. Each folder's README has the exact clicks.
 | [2. Permissions](02-permissions/README.md) | Register the app, store its secret, give it access, **confirm the checklist** | Entra, Fabric admin, Azure portals |
 | [3. Configure](03-configure/README.md) | Fill in `config.json`, run `npm run all` to generate the notebooks and model files | Your PC |
 | [4. Import](04-import/README.md) | Import the notebooks, run `Lake_Init` and `Lake_Validate_Credentials`, upload the model files | Fabric |
-| [5. Ingest](05-ingest/README.md) | Run the ingesters and the first backfill | Fabric |
-| [6. Process](06-process/README.md) | Run the processor, then copy tables into bronze, silver and gold | Fabric |
+| [5. Ingest](05-ingest/README.md) | Run `Lake_Orchestrator` once with `first_load`: all ingesters, the first backfill, processing and promote | Fabric |
+| [6. Process](06-process/README.md) | Check what the processor and promote did (bronze, silver, gold) | Fabric |
 | [7. Semantic models](07-semantic-model/README.md) | Create, connect and refresh the models | Fabric |
-| [8. Orchestrate](08-orchestrate/README.md) | Run it all from one notebook, schedule it daily, [re-run only what failed](08-orchestrate/RERUNS.md) | Fabric |
+| [8. Orchestrate](08-orchestrate/README.md) | Schedule the daily run, [re-run only what failed](08-orchestrate/RERUNS.md) | Fabric |
 
 **Backfill.** The first run loads 30 days of audit history by default (up to 180). Daily runs then pick up where the last one stopped. Every date range loaded is recorded in `ops.backfill_ledger`.
 
