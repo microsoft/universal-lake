@@ -1,6 +1,18 @@
 # Step 3: Configure
 
-On your PC: fill in **one file** (`config.json`) and run **one command** (`npm run all`). That generates the notebooks and model files, with your IDs already filled in, into `out/`. Nothing goes to Fabric yet; that's step 4.
+**What happens in this step:** you write your values (tenant, app, workspace, Lakehouse, secret, which data sources you want) into one file, `config.json`. A build command then puts those values into the notebooks and semantic model files, so you don't edit any notebook by hand. Everything runs on your PC; nothing goes to Fabric until step 4.
+
+```mermaid
+flowchart LR
+  A["config.json<br/>your IDs + data sources"] --> B["npm run all"]
+  S["source repo<br/>notebook templates"] --> B
+  B --> N["out/notebooks<br/>only the sources you chose,<br/>IDs filled in, Lakehouse attached"]
+  B --> M["out/models<br/>semantic models on gold"]
+  N --> I["Step 4: import into Fabric"]
+  M --> I
+```
+
+The steps: install the tools (3.1), get the code (3.2), fill in `config.json` (3.3), and run `npm run all` (3.4).
 
 ## 3.1 Install the tools
 
@@ -38,6 +50,14 @@ Replace each `<...>` value. The build warns about any you miss.
 | `dataSources` | Which sources to load; see the next table. Set what you don't use to `skip` (the template turns most on). | |
 
 **`dataSources`**
+
+This is your list of what to load. For each source, the build:
+
+* **`api`**: includes the notebook that pulls the data straight from Microsoft (Graph, audit log, Azure, Dataverse) using the app from step 2.
+* **`csv`**: includes the notebook that reads a file you export yourself and upload to the Lakehouse in step 4. Use it when there's no API or you lack the permission.
+* **`skip`**: leaves that source out: no notebook, no tables, and its semantic model isn't built.
+
+It also prints the Graph permissions the chosen sources need, so you can check them against step 2.
 
 | Source | Required? | Allowed | Notes |
 |---|---|---|---|
