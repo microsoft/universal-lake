@@ -1,0 +1,52 @@
+{
+  "$comment": "Copy to config.json (git-ignored) and fill in. Values marked <...> are required. Never put the client secret here: it lives in Key Vault.",
+  "sourceRepo": "<path-to-source-repo-clone>",
+  "pinnedCommit": "52c1965d53d73d459b62a4c927865f2300049fe6",
+
+  "tenantId": "<tenant-guid>",
+  "appId": "<app-registration-client-id>",
+  "keyVault": {
+    "uri": "https://<your-vault>.vault.azure.net/",
+    "secretName": "universal-lake-client-secret"
+  },
+
+  "workspace": { "id": "<fabric-workspace-guid>", "name": "<workspace name>" },
+  "lakehouse": {
+    "id": "<lakehouse-guid>",
+    "name": "UniversalLake_LH",
+    "sqlEndpoint": "<xxxx.datawarehouse.fabric.microsoft.com>"
+  },
+
+  "scale": "standard",
+  "backfillDays": 30,
+
+  "dataSources": {
+    "core": "api",
+    "orgData": "api",
+    "workday": "skip",
+    "m365Activity": "api",
+    "agent365": "api",
+    "productFeedback": "csv",
+    "studioCredits": "csv",
+    "coworkCredits": "csv",
+    "azureAi": "api",
+    "agentEvaluator": "api"
+  },
+
+  "azure": {
+    "subscriptionId": "",
+    "paygSubscriptions": []
+  },
+
+  "dataverseEnvironments": [
+    { "url": "https://<org>.crm.dynamics.com", "name": "Production" }
+  ],
+
+  "semanticModels": {
+    "universal":      { "name": "Universal Lake Model", "id": "" },
+    "consumption":    { "name": "Analytics Hub Consumption Model", "id": "" },
+    "agentEvaluator": { "name": "Analytics Hub Agent Evaluator Model", "id": "" }
+  },
+
+  "modelSchema": "gold"
+}

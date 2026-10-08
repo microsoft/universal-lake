@@ -1,0 +1,16 @@
+{
+  "name": "universal-lake",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Step-by-step, traceable build of a Universal Data Lake (bronze/silver/gold) and semantic model for Microsoft Copilot data on Microsoft Fabric.",
+  "engines": { "node": ">=20.12" },
+  "scripts": {
+    "check": "node scripts/check_source.mjs",
+    "scan": "node scripts/scan_sensitive.mjs --history",
+    "sync": "node scripts/sync_notebooks.mjs",
+    "models": "node scripts/build_models.mjs",
+    "notebooks": "python scripts/build_ipynb.py",
+    "all": "node scripts/check_source.mjs && node scripts/sync_notebooks.mjs && node scripts/build_models.mjs && python scripts/build_ipynb.py"
+  }
+}

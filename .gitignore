@@ -1,0 +1,21 @@
+# Your filled-in settings: tenant, client, workspace and Lakehouse IDs live here. Never commit.
+config.json
+*.local.json
+.env
+.env.*
+# Credentials and keys
+*.pfx
+*.pem
+*.key
+*.cer
+*.publishsettings
+secrets*/
+*secret*.txt
+# Your private block-list for scripts/scan_sensitive.mjs (aliases, tenant names)
+.scan-blocklist
+# Generated
+out/
+node_modules/
+__pycache__/
+*.pyc
+.playwright-mcp/
