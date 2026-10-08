@@ -31,6 +31,7 @@ Snapshot sources (licences, org data, feedback, uploads, Azure AI's 90 days) rel
 | `START_FROM` | blank | Skip every step before this one |
 | `RUN_ID` + `RERUN_FAILED` | blank / `False` | Re-run only the steps of that run that didn't succeed |
 | `CONTINUE_ON_ERROR` | `True` | Keep going after a non-critical failure |
+| `AUTO_RESUME` | `8` | Times a paused audit step is resumed automatically before the run moves on |
 | `DRY_RUN` | `False` | Print the plan and stop |
 
 `audit`, `licensed_users`, `processor` and `promote` are **critical**: if one fails, the rest of the run is skipped. After them come `refresh_universal`, `refresh_consumption`, `refresh_agent_evaluator` and `data_check`. Steps for sources you didn't pick show as `SKIP`.

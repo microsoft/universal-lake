@@ -35,11 +35,21 @@ After these come `promote` ([step 6](../06-process/README.md)) and the model ref
 
 ## The audit backfill: what to expect
 
-* It fetches one query per day (`standard`) or per 2 hours (`large`). A 30-day backfill on `standard` is 30 queries.
-* Each finished chunk is saved to `Files/_audit_staging`, so **a re-run resumes** instead of starting over.
-* After 90 minutes (`standard`) or 5 hours (`large`) it stops and the step shows **`paused`**. That's normal for big backfills: run it again with the same `RUN_ID` and `RERUN_FAILED = True` until it says `succeeded`.
-* A chunk that keeps failing becomes a **gap**. Daily runs refuse to start until you run `RUN_MODE = 'backfill'` over that period.
-* The audit log keeps 180 days, so `backfillDays` can't be more than 180.
+**What a query is.** The audit step asks Purview for Copilot events through the Graph audit search API. Each request is one *query*: an audit search job, like a search in the Purview portal, over one time window. Purview runs it in the background, and the notebook waits for it, then downloads the results.
+
+**Limits.**
+
+* Purview runs about **10 audit queries at once** per tenant. The notebook runs **5 in parallel**, leaving room for other admins. If Purview throttles it (HTTP 429), it lowers that number for the rest of the run.
+* A window is **1 day** on `standard`, **2 hours** on `large` (busy tenants have too many events for a 1-day window). A 30-day backfill on `standard` is 30 queries, about 5 running at a time.
+* A window that keeps failing is retried, then **split in half** (down to 1 hour) and the halves are queried.
+* Purview keeps **180 days** of audit data, so `backfillDays` is at most 180.
+
+**You don't need to re-run it by hand.**
+
+* Each finished window is saved to `Files/_audit_staging`. A run that stops resumes from there instead of starting over.
+* Each pass of the audit step stops cleanly after 90 minutes (`standard`) or 5 hours (`large`), so Fabric doesn't kill it mid-write. The orchestrator then **resumes it automatically**, up to `AUTO_RESUME` (default 8) more times, before moving on. That covers about 12 hours on `standard` and 45 on `large`.
+* Only if it's still not done after that does the step end `paused`. Then retry with `RUN_ID` and `RERUN_FAILED = True` (see below), or raise `AUTO_RESUME`.
+* A window that fails even at 1 hour is a **gap**. The run reports it, and the next daily run refuses to start until you run once with `RUN_MODE = 'backfill'` over that period. This stops a gap from being silently skipped.
 
 See what was fetched:
 

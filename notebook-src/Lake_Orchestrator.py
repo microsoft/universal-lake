@@ -29,6 +29,7 @@ START_FROM = ''                # skip every step before this one
 RUN_ID = ''                    # blank = new run; set it with RERUN_FAILED to resume that run
 RERUN_FAILED = False           # with RUN_ID: run only the steps of RUN_ID whose last status is not 'succeeded'
 CONTINUE_ON_ERROR = True       # non-critical step failures are logged and the run continues
+AUTO_RESUME = 8                # a step that pauses on its time budget (audit) is resumed automatically up to this many more times
 DRY_RUN = False                # print the plan and stop
 
 # %%
@@ -253,6 +254,12 @@ for step_no, (name, nb, module, critical, timeout, args, led, reason) in enumera
         continue
 
     status, err = run_one(step_no, name, nb, timeout, args, led)
+    passes = 0
+    while status == 'paused' and passes < int(AUTO_RESUME):
+        passes += 1
+        print(f'    {name} paused (time budget); resuming automatically, pass {passes} of {AUTO_RESUME}. '
+              'Finished windows are reused from staging.')
+        status, err = run_one(step_no, name, nb, timeout, args, led)
     results[name] = status
 
     if status != 'succeeded' and name in FALLBACKS:
