@@ -51,7 +51,7 @@ Opening a notebook and running it is always allowed. It isn't logged to `ops.*`.
 | Step / message | Likely cause | Fix |
 |---|---|---|
 | any: `401` / `403` / `Authorization_RequestDenied` | Permission or consent missing | Run `Lake_Validate_Credentials`, then fix what it lists ([step 2](../02-permissions/README.md)) |
-| any: `Key Vault … Forbidden` | You (or the app) can't read the secret | Give the running identity **Key Vault Secrets User**, or use the `config.json` bypass ([step 2.4](../02-permissions/README.md#24-store-the-client-secret)) |
+| any: `Key Vault … Forbidden` | You (or the app) can't read the secret | Give the running identity **Key Vault Secrets User**, or use the `config.json` bypass ([step 2.2](../02-permissions/README.md#22-store-the-client-secret)) |
 | `audit`: `Time budget of N min reached …` (`paused`) | A long backfill | `RERUN_FAILED=True` on the same `RUN_ID`, as many times as needed. On a large tenant, use `SCALE='large'`. |
 | `audit`: refuses, *unrecovered gap* | An older chunk failed for good | Run `RUN_MODE='backfill'` with `BACKFILL_DAYS` covering the gap |
 | `audit`: chunks keep failing even at 1 h | Audit service trouble | Wait and rerun. Staged chunks are kept. |

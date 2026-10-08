@@ -31,7 +31,7 @@ The model IDs are saved in `ops.config`. **The orchestrator's refresh steps are 
 | `REFRESH` | `True` | `False`: deploy only |
 | `REFRESH_TIMEOUT_MIN` | 60 | Raise for a big first refresh |
 
-`spn` needs the app to be **Viewer** on the workspace and *Service principals can use Fabric APIs* on ([step 2](../02-permissions/README.md#25-give-the-app-access-to-what-it-reads)).
+`spn` needs the app to be **Viewer** on the workspace and *Service principals can use Fabric APIs* on ([step 2](../02-permissions/README.md#23-give-the-app-access)).
 
 ## When to run it again
 

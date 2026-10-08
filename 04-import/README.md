@@ -44,11 +44,11 @@ Open it > **Run all**. It writes nothing; run it as often as you like, and again
 |---|---|
 | Client secret from Key Vault | Give yourself *Key Vault Secrets User* on the vault. With the `config.json` bypass this shows as a **warning**, which is expected. |
 | Graph token | Wrong tenant ID or app ID, or the secret expired or was mistyped. |
-| Graph permissions for `<module>` | Add the permission and grant admin consent ([2.3](../02-permissions/README.md#23-register-the-app)). Wait a few minutes, re-run. |
-| Audit log query API | Turn on audit logging. New tenants: wait 24 hours. |
-| Usage reports show real user names | Turn off concealed names ([2.2](../02-permissions/README.md#22-turn-on-tenant-settings)). |
+| Graph permissions for `<module>` | Add the permission and grant admin consent ([2.1](../02-permissions/README.md#21-register-the-app-and-add-permissions)). Wait a few minutes, re-run. |
+| Audit log query API | Audit is on by default; check Microsoft Purview > **Audit** is recording, and that `AuditLogsQuery.Read.All` is consented. |
+| Usage reports show real user names | Turn off concealed names ([2.3](../02-permissions/README.md#23-give-the-app-access)). |
 | Copilot packages API | No Agent 365 in the tenant: set `dataSources.agent365` to `csv`, rebuild. |
-| Azure subscription / cost query | Give the app the three reader roles ([2.5](../02-permissions/README.md#25-give-the-app-access-to-what-it-reads)). |
+| Azure subscription / cost query | Give the app the three reader roles ([2.3](../02-permissions/README.md#23-give-the-app-access)). |
 | Dataverse / transcripts | Add the app as an application user with Bot Transcript Viewer. |
 
 **Don't continue until every required check passes.** It raises an error at the end if one fails.

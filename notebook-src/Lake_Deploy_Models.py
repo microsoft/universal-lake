@@ -209,7 +209,12 @@ for i, key in enumerate(keys, 1):
             print(f'Refresh: {state}')
             if state != 'Completed':
                 raise RuntimeError(f'Refresh {state}: {json.dumps(detail.get("serviceExceptionJson") or detail)[:3000]}')
-            counts = probe(model_id, bim)
+            try:
+                counts = probe(model_id, bim)
+            except Exception as e:
+                counts = []
+                print(f'Row-count check skipped ({str(e)[:200]}). The tenant setting '
+                      '"Semantic model Execute Queries REST API" may be off; the refresh itself succeeded.')
             for t, n in counts:
                 print(f'  {t:40} {n if n is not None else 0:>12,}')
             empty = [t for t, n in counts if not n]

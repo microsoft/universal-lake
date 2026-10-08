@@ -21,40 +21,52 @@ copy config.template.json config.json
 
 ## 3.3 Fill in `config.json`
 
-Replace every `<...>` value.
+### Required: every setup
+
+Replace each `<...>` value. The build warns about any you miss.
 
 | Field | Value | Where you got it |
 |---|---|---|
 | `sourceRepo` | `../source-repo` | 3.2 |
-| `pinnedCommit` | leave as it is | |
-| `tenantId` | Directory (tenant) ID | [2.3](../02-permissions/README.md#23-register-the-app), app Overview |
-| `appId` | Application (client) ID | [2.3](../02-permissions/README.md#23-register-the-app), app Overview |
-| `keyVault.uri` | `https://<name>.vault.azure.net/` | [2.4](../02-permissions/README.md#24-store-the-client-secret), vault Overview. Leave as is if you use the bypass. |
-| `keyVault.secretName` | `universal-lake-client-secret` | 2.4 |
-| `clientSecret` | **Leave `""`** with Key Vault. Bypass only (not recommended): the secret value. | 2.4 |
+| `tenantId` | Directory (tenant) ID | [2.1](../02-permissions/README.md#21-register-the-app-and-add-permissions), app Overview |
+| `appId` | Application (client) ID | [2.1](../02-permissions/README.md#21-register-the-app-and-add-permissions), app Overview |
 | `workspace.id` | GUID after `/groups/` in the URL | [1.4](../01-fabric/README.md#14-copy-three-values-from-fabric) |
 | `workspace.name` | The workspace name | 1.2 |
 | `lakehouse.id` | GUID after `/lakehouses/` in the URL | [1.4](../01-fabric/README.md#14-copy-three-values-from-fabric) |
-| `lakehouse.name` | `UniversalLake_LH` | 1.3 |
 | `lakehouse.sqlEndpoint` | Host only: `xxxx.datawarehouse.fabric.microsoft.com` | [1.4](../01-fabric/README.md#14-copy-three-values-from-fabric) |
-| `scale` | `standard`, or `large` above ~20k Copilot users | 1.1 |
-| `backfillDays` | Days of audit history in the first load. **30** is a good start; max 180. | |
-| `dataSources` | `api`, `csv` or `skip` per source (below) | 2.1 |
-| `azure.subscriptionId` | Only if `azureAi` is `api`; otherwise leave `""` | |
-| `dataverseEnvironments` | Only if `agentEvaluator` is `api`: `{ "url": "https://<org>.crm.dynamics.com", "name": "..." }`. Otherwise delete the sample row. | |
-| `semanticModels`, `modelSchema` | leave as they are | |
+| **Secret: one of** | **Key Vault (recommended):** `keyVault.uri` = `https://<name>.vault.azure.net/`, and leave `clientSecret` as `""`.<br>**Bypass (not recommended):** leave `keyVault.uri` as it is and put the secret value in `clientSecret`. | [2.2](../02-permissions/README.md#22-store-the-client-secret) |
+| `dataSources` | Which sources to load; see the next table. Set what you don't use to `skip` (the template turns most on). | |
 
-**`dataSources`**: set anything you're not using to `skip`. The template turns most sources on.
+**`dataSources`**
 
-| Source | Allowed | Notes |
+| Source | Required? | Allowed | Notes |
+|---|---|---|---|
+| `copilotInteractions` | **Required** | `api` | Copilot prompts and responses, from the audit log |
+| `orgData` | **Required** | `api` | Users, departments, managers |
+| `m365Activity` | Optional | `api`, `skip` | Teams, Outlook, Word, Excel, PowerPoint usage |
+| `agent365` | Optional | `api`, `csv`, `skip` | `csv` if you lack Agent 365 or its Graph permissions |
+| `workday` | Optional | `csv`, `skip` | Only if org data comes from a Workday export |
+| `productFeedback`, `studioCredits`, `coworkCredits` | Optional | `csv`, `skip` | You upload the exports in step 4 |
+| `azureAi` | Optional | `api`, `skip` | Also fill in `azure.subscriptionId` (below) |
+| `agentEvaluator` | Optional | `api`, `skip` | Also fill in `dataverseEnvironments` (below) |
+
+### Optional: only if you turned on that source
+
+| Field | Fill in when | Otherwise |
 |---|---|---|
-| `copilotInteractions`, `orgData` | `api` | Always on |
-| `m365Activity` | `api`, `skip` | |
-| `agent365` | `api`, `csv`, `skip` | `csv` if you lack Agent 365 or the Graph permissions |
-| `workday` | `csv`, `skip` | Only if org data comes from a Workday export |
-| `productFeedback`, `studioCredits`, `coworkCredits` | `csv`, `skip` | You upload exports in step 4 |
-| `azureAi` | `api`, `skip` | Needs `azure.subscriptionId` |
-| `agentEvaluator` | `api`, `skip` | Needs `dataverseEnvironments` |
+| `azure.subscriptionId` | `azureAi` is `api`: the subscription that holds your Azure AI resources | leave `""` |
+| `azure.paygSubscriptions` | Copilot pay-as-you-go is billed to other subscriptions: list their IDs | leave `[]` |
+| `dataverseEnvironments` | `agentEvaluator` is `api`: one `{ "url": "https://<org>.crm.dynamics.com", "name": "..." }` per Copilot Studio environment | delete the sample row (leave `[]`) |
+
+### Optional: defaults are fine
+
+| Field | Default | Change it when |
+|---|---|---|
+| `scale` | `standard` | Use `large` above ~20k Copilot users (see 1.1) |
+| `backfillDays` | `30` | You want more audit history in the first load (max 180) |
+| `keyVault.secretName` | `universal-lake-client-secret` | You named the secret differently in 2.2 |
+| `lakehouse.name` | `UniversalLake_LH` | You named the Lakehouse differently in 1.3 |
+| `pinnedCommit`, `semanticModels`, `modelSchema` | as shipped | Leave them |
 
 ## 3.4 Generate the files to import
 

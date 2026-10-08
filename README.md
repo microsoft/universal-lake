@@ -27,7 +27,7 @@ flowchart LR
 | Fabric capacity | **F2**, or a free Fabric trial. **F64+** for more than ~10,000 people or for viewers without Power BI Pro. See [step 1](01-fabric/README.md#11-pick-a-capacity). |
 | Fabric workspace | One, where you are **Admin** or **Member** |
 | Entra ID | Rights to register an app, and an admin who can grant consent |
-| Azure Key Vault | **Recommended** for the app's secret. No vault yet? You can put the secret in `config.json` for a first run (not recommended; see [step 2.4](02-permissions/README.md#24-store-the-client-secret)). |
+| Azure Key Vault | **Recommended** for the app's secret. No vault yet? You can put the secret in `config.json` for a first run (not recommended; see [step 2.2](02-permissions/README.md#22-store-the-client-secret)). |
 | A PC with | Git, Node.js 20.12+, Python 3.9+ |
 
 ## Steps
@@ -37,7 +37,7 @@ Do them in order. Each folder's README has the exact clicks.
 | Step | You do | Where |
 |---|---|---|
 | [1. Fabric](01-fabric/README.md) | Create the workspace and a **schema-enabled** Lakehouse, copy their IDs from the URL | Fabric portal |
-| [2. Permissions](02-permissions/README.md) | Turn on tenant settings, register the app, store its secret, **confirm the checklist** | Entra, Fabric admin, Azure portals |
+| [2. Permissions](02-permissions/README.md) | Register the app, store its secret, give it access, **confirm the checklist** | Entra, Fabric admin, Azure portals |
 | [3. Configure](03-configure/README.md) | Fill in `config.json`, run `npm run all` to generate the notebooks and model files | Your PC |
 | [4. Import](04-import/README.md) | Import the notebooks, run `Lake_Init` and `Lake_Validate_Credentials`, upload the model files | Fabric |
 | [5. Ingest](05-ingest/README.md) | Run the ingesters and the first backfill | Fabric |
