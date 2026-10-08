@@ -1,91 +1,52 @@
 # Step 7: Semantic models
 
-The models and their relationships are built by **the installer's own model code**, pointed at the `gold` schema. Nothing is hand-written, so they match what the installer deploys.
+`Lake_Deploy_Models` creates the semantic models from the files you uploaded in [step 4.5](../04-import/README.md#45-upload-the-model-definitions), connects them to the gold tables and refreshes them. The models and relationships come from the installer's own model code, so they match what the installer deploys.
 
-| Model key | Display name | Tables | Relationships | Lakehouse (gold) tables | Module |
-|---|---|---|---|---|---|
-| `universal` | Universal Lake Model | 20 | 10 | 6 | core |
-| `consumption` | Analytics Hub Consumption Model | 37 | 16 | 14 | consumption |
-| `agentEvaluator` | Analytics Hub Agent Evaluator Model | 43 | 23 | 10 | agentEvaluator |
+| Model | Display name | Tables | Relationships | Module |
+|---|---|---|---|---|
+| `universal` | Universal Lake Model | 20 | 10 | core |
+| `consumption` | Analytics Hub Consumption Model | 37 | 16 | consumption |
+| `agentEvaluator` | Analytics Hub Agent Evaluator Model | 43 | 23 | agentEvaluator |
 
-These are the installer's display names. If the installer already deployed models into the same workspace, use a different workspace, or rename the existing ones first. Otherwise 06 finds them by name and **updates** them.
+Models for modules you didn't pick are skipped. If models with these names already exist in the workspace (for example from the installer), they are **updated**, so use a different workspace or rename the old ones first.
 
-Other tables (dates, parameters, calculated tables) live in the model itself and need no Lakehouse table.
+To review a model before deploying, open `out/models/<model>/relationships.txt` or `model.bim` on your PC.
 
-## 1. Build on your PC
+## Run it
 
-```powershell
-npm run models        # or: npm run all
-```
+1. Make sure [step 6](../06-process/README.md) has run, so gold has data. Otherwise the refresh fails with *table … not found*.
+2. Open `Lake_Deploy_Models` > **Run all**.
 
-This writes to `out/models/`:
+For each model it: finds or creates it, replaces its definition, connects it to the Lakehouse SQL endpoint as the app, refreshes it, and counts rows per table. A table with `0` rows means its ingester loaded nothing.
 
-| File | What it is |
-|---|---|
-| `<key>/definition.json` | The Fabric item definition that `Lake_Deploy_Models` uploads |
-| `<key>/model.bim` | The same model as readable TMSL, to review or diff |
-| `<key>/relationships.txt` | Every relationship: `from[col] -> to[col]`, marked `(inactive)` where it applies |
-| `<key>/lakehouse_tables.txt` | The gold tables this model reads |
-| `gold_tables.json` | All of the above per model; `Lake_Promote_Medallion` uses it to decide what is gold |
-| `SUMMARY.json` | Server, database, schema, modules and per-model counts. The source commit is in `out/SOURCE.lock.json`. |
+The model IDs are saved in `ops.config`. **The orchestrator's refresh steps are skipped until this notebook has run once.**
 
-The server and database in the models come from `lakehouse.sqlEndpoint` and `lakehouse.name` in `config.json`, and the schema is `gold`. If you change either, rebuild. If `sqlEndpoint` is blank, the build warns you and the models carry a placeholder server.
-
-## 2. Upload
-
-Upload the whole `out/models` folder into **`Files/universal_lake/`**, so you have `Files/universal_lake/models/<key>/definition.json` and `Files/universal_lake/models/gold_tables.json`. To do that: open the Lakehouse, click `…` next to `Files/universal_lake`, then **Upload > Upload folder**. Overwrite the files when you rebuild.
-
-## 3. Promote first
-
-Gold must hold the tables before the refresh, so run [step 6](../06-process/README.md) first. Otherwise the refresh fails with *"table … not found"*.
-
-## 4. Run `Lake_Deploy_Models`
-
-For each model in `MODELS`:
-
-| Step | What happens | If it fails |
-|---|---|---|
-| Find | Looks the model up by `ops.config` `model_id.<key>`, then by display name | n/a |
-| Create or update | Creates the model, or replaces its definition. An update leaves it empty until the refresh. | Fix the error and rerun. Nothing else has changed. |
-| Connect | Binds the model to the Lakehouse SQL endpoint (see below) | Bind it by hand: model **Settings > Gateway and cloud connections** |
-| Prints the relationships | Lists every relationship it deployed | n/a |
-| Refresh | Full refresh, then waits up to `REFRESH_TIMEOUT_MIN` | The service's error is in the output and in `ops.run_log` |
-| Probe | Counts the rows in each imported table through DAX | `0` rows means that gold table is empty, so check its ingester |
-
-The model ID is saved to `ops.config` as `model_id.<key>`. **The orchestrator's refresh steps are skipped until that ID exists.**
-
-### Parameters
+## Parameters
 
 | Parameter | Default | Use |
 |---|---|---|
-| `MODELS` | `universal,consumption,agentEvaluator` | Models that have no uploaded definition are skipped |
-| `CONNECTION_MODE` | `spn` | `spn`: creates or updates a cloud connection *"Universal Lake SQL &lt;ws&gt;"* that signs in as the app, using the Key Vault secret. `existing`: uses `CONNECTION_ID`. `skip`: you bind it yourself. |
-| `CONNECTION_ID`, `CONNECTION_NAME` | blank | For `existing`, or to rename the connection |
-| `DEPLOY` | `True` | `False`: no definition change. It only connects, refreshes and probes (use after a manual bind). |
+| `MODELS` | all three | Only some, e.g. `'universal'` |
+| `CONNECTION_MODE` | `spn` | `spn`: connects as the app, using the client secret (Key Vault, or the `config.json` bypass). `existing`: use `CONNECTION_ID`. `skip`: bind it yourself in the model's **Settings > Gateway and cloud connections**. |
+| `DEPLOY` | `True` | `False`: don't change the definition; only reconnect, refresh and count |
 | `REFRESH` | `True` | `False`: deploy only |
-| `REFRESH_TIMEOUT_MIN` | 60 | Raise this for a large first refresh |
+| `REFRESH_TIMEOUT_MIN` | 60 | Raise for a big first refresh |
 
-`spn` needs the app to be a Viewer of the workspace ([step 2.4](../02-permissions/README.md#follow-ups-for-both-options)) and the tenant setting *"Service principals can use Fabric APIs"*. **After you rotate the secret, rerun this notebook with `DEPLOY = False`** so the connection gets the new one.
+`spn` needs the app to be **Viewer** on the workspace and *Service principals can use Fabric APIs* on ([step 2](../02-permissions/README.md#25-give-the-app-access-to-what-it-reads)).
 
-## Later refreshes
+## When to run it again
 
-There is no need to rerun 06 for a daily refresh. The orchestrator's `refresh_universal`, `refresh_consumption` and `refresh_agent_evaluator` steps run the installer's `AnalyticsHub_Refresh_Model` against the saved model IDs. Run 06 again only when:
+Daily refreshes are done by the orchestrator, not this notebook. Run `Lake_Deploy_Models` again only when:
 
-* you upgraded the source pin (new model definition), or
-* you changed `config.json` (endpoint or Lakehouse), or
-* you rotated the secret (`DEPLOY = False`).
+* you rotated the client secret: `DEPLOY = False`;
+* you changed the source version or `lakehouse.sqlEndpoint`: `npm run models`, re-upload `out/models`, then run it.
 
-## Connecting reports
+## Use the models
 
-The models are ordinary Fabric semantic models. Build your own reports on them, or connect the source repo's report template (`.pbit`).
-
-## Checking it
+They are normal Fabric semantic models: build Power BI reports on them, use them with Copilot in Power BI or a data agent, or query them with DAX.
 
 ```sql
-SELECT step, status, exit_value, error FROM ops.run_log
+SELECT step, status, error FROM ops.run_log
 WHERE step LIKE 'deploy:%' AND event = 'end' ORDER BY ended_at DESC LIMIT 10;
-
-SELECT key, value FROM ops.config WHERE key LIKE 'model_id.%';
 ```
 
 Next: [Step 8: Orchestrate](../08-orchestrate/README.md)

@@ -16,7 +16,7 @@
 # |---|---|---|
 # | Find | Looks the model up by the ID in `ops.config`, then by display name | n/a |
 # | Create / update | Creates the model, or replaces its definition (`updateDefinition`). Updating clears its data until the refresh | Fix the reported error and run again. Nothing else has changed yet |
-# | Connect | `CONNECTION_MODE`: `spn` creates or updates a SQL connection signed in as the app (secret from Key Vault); `existing` uses `CONNECTION_ID`; `skip` leaves it to you | Bind it yourself: model **Settings > Gateway and cloud connections** |
+# | Connect | `CONNECTION_MODE`: `spn` creates or updates a SQL connection signed in as the app (secret from Key Vault, or `CLIENT_SECRET`); `existing` uses `CONNECTION_ID`; `skip` leaves it to you | Bind it yourself: model **Settings > Gateway and cloud connections** |
 # | Refresh | Full refresh, then waits for it | `ops.run_log` holds the service's error; usually a missing gold table or the connection |
 # | Probe | Counts rows in each model table through DAX | Zero rows means the gold table is empty: check the ingest for that source |
 #
@@ -32,6 +32,7 @@ CONNECTION_NAME = ''                 # blank: 'Universal Lake SQL <workspace id 
 DEPLOY = True                        # False: skip create/update and only connect, refresh and probe
 REFRESH = True
 REFRESH_TIMEOUT_MIN = 60
+CLIENT_SECRET = ''                   # NOT recommended: only when you have no Key Vault (blank = read it from Key Vault)
 
 # %%
 %run lake_ops
@@ -91,7 +92,12 @@ def ensure_connection():
         if not CONNECTION_ID:
             raise ValueError('CONNECTION_MODE is "existing" but CONNECTION_ID is blank')
         return CONNECTION_ID
-    secret = notebookutils.credentials.getSecret(cfg('key_vault_uri', required=True), cfg('secret_name', required=True))
+    if CLIENT_SECRET:
+        secret = CLIENT_SECRET
+    elif cfg('key_vault_uri'):
+        secret = notebookutils.credentials.getSecret(cfg('key_vault_uri'), cfg('secret_name', required=True))
+    else:
+        raise ValueError('No Key Vault in ops.config and CLIENT_SECRET is blank. Set one, or use CONNECTION_MODE = "skip".')
     credentials = {
         'singleSignOnType': 'None', 'connectionEncryption': 'Encrypted', 'skipTestConnection': False,
         'credentials': {'credentialType': 'ServicePrincipal', 'tenantId': cfg('tenant_id', required=True),

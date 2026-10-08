@@ -30,7 +30,17 @@ config.dataSources = normaliseDataSources(cfg.dataSources, config.modules, { azu
 config.modules = modulesFromSources(config.dataSources);
 config.history = { days: cfg.backfillDays ?? 30 };
 config.app.appId = need(cfg.appId, 'appId');
-config.keyVault = { uri: need(cfg.keyVault?.uri, 'keyVault.uri'), secretName: cfg.keyVault?.secretName || 'universal-lake-client-secret', mode: 'keyvault' };
+// Key Vault is the default. Without a vault URI, a clientSecret in config.json is written into the notebooks instead
+// (the installer's own 'notebook' mode). Not recommended: anyone who can open the notebooks can read it.
+const filled = (v) => isSet(v) && !v.includes('<');
+const inlineSecret = !filled(cfg.keyVault?.uri) && filled(cfg.clientSecret);
+if (inlineSecret) {
+  config.keyVault = { secretName: cfg.keyVault?.secretName || 'universal-lake-client-secret', mode: 'notebook' };
+  warnings.push('No keyVault.uri: the client secret from config.json is written INTO the notebooks. Anyone who can open them can read it. Move it to Key Vault as soon as you can (see 02-permissions).');
+} else {
+  config.keyVault = { uri: need(cfg.keyVault?.uri, 'keyVault.uri'), secretName: cfg.keyVault?.secretName || 'universal-lake-client-secret', mode: 'keyvault' };
+  if (isSet(cfg.clientSecret)) warnings.push('Both keyVault.uri and clientSecret are set: Key Vault is used. Delete clientSecret from config.json.');
+}
 config.fabric = {
   notebooks: {},
   workspaceId: need(cfg.workspace?.id, 'workspace.id'),
@@ -51,7 +61,7 @@ config.agentEvaluator = { ...config.agentEvaluator, environments: envs.map((e) =
 if (config.dataSources.azureAi === 'api' && !subscription) warnings.push('dataSources.azureAi is "api" but azure.subscriptionId is empty: the Azure AI notebook is left out.');
 if (config.dataSources.agentEvaluator === 'api' && !envs.length) warnings.push('dataSources.agentEvaluator is "api" but no dataverseEnvironments are set: the transcript parser is left out.');
 
-const ctx = { config, user: { tenantId: need(cfg.tenantId, 'tenantId') }, pendingSecret: undefined };
+const ctx = { config, user: { tenantId: need(cfg.tenantId, 'tenantId') }, pendingSecret: inlineSecret ? cfg.clientSecret : undefined };
 const selected = notebooksFor(config.modules, notebookOptions(config));
 
 const dir = join(OUT, 'notebooks');
@@ -87,6 +97,7 @@ const lock = {
   uncommittedChanges: state.dirty,
   modules: config.modules,
   dataSources: config.dataSources,
+  secretMode: inlineSecret ? 'notebook' : 'keyvault',
   graphPermissions: permissionsFor(config.modules, config.dataSources),
   notebooks: manifest,
 };

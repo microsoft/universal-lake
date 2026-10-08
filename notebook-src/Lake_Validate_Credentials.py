@@ -8,7 +8,7 @@
 #
 # | Check | Proves | Fix if it fails |
 # |---|---|---|
-# | Key Vault | The notebook's user can read the client secret | Give yourself *Key Vault Secrets User* on the vault |
+# | Key Vault | The notebook's user can read the client secret (skipped, with a warning, if you use `CLIENT_SECRET`) | Give yourself *Key Vault Secrets User* on the vault |
 # | Graph token | Tenant, app ID and secret are right | Check the IDs; make a new secret if it expired |
 # | Graph roles | Admin consent covers every enabled module | Grant the missing permission, then *Grant admin consent* |
 # | Graph probes | Each API answers (audit query, reports, users, Copilot packages) | See the message: licence, consent delay, or report privacy |
@@ -19,8 +19,9 @@
 # %% [parameters]
 TENANT_ID = ''
 CLIENT_ID = ''
-KEY_VAULT_URI = ''              # https://<vault>.vault.azure.net/
+KEY_VAULT_URI = ''              # https://<vault>.vault.azure.net/  (recommended)
 SECRET_NAME = 'universal-lake-client-secret'
+CLIENT_SECRET = ''              # NOT recommended: only when you have no Key Vault. Leave blank to use Key Vault.
 MODULES = 'core,orgData,m365Activity,agent365,productFeedback,consumption,agentEvaluator'
 AGENT365_SOURCE = 'api'         # 'api' needs Graph permissions; 'csv' does not
 AZURE_SUBSCRIPTION_IDS = ''     # comma-separated; empty skips the Azure checks
@@ -43,20 +44,26 @@ def check(name, ok, detail='', required=True):
     return ok
 
 
-for name, value in {'TENANT_ID': TENANT_ID, 'CLIENT_ID': CLIENT_ID, 'KEY_VAULT_URI': KEY_VAULT_URI}.items():
+for name, value in {'TENANT_ID': TENANT_ID, 'CLIENT_ID': CLIENT_ID}.items():
     if not value:
         raise ValueError(f'{name} is empty. Fill in the parameters cell first.')
+if not KEY_VAULT_URI and not CLIENT_SECRET:
+    raise ValueError('Set KEY_VAULT_URI (recommended) or, if you have no Key Vault, CLIENT_SECRET.')
 
 # %% [markdown]
-# ## Key Vault and app token
+# ## Client secret and app token
 
 # %%
 secret = None
-try:
-    secret = notebookutils.credentials.getSecret(KEY_VAULT_URI, SECRET_NAME)
-    check('Key Vault secret readable', bool(secret), f'{KEY_VAULT_URI} / {SECRET_NAME}')
-except Exception as e:
-    check('Key Vault secret readable', False, str(e)[:300])
+if KEY_VAULT_URI:
+    try:
+        secret = notebookutils.credentials.getSecret(KEY_VAULT_URI, SECRET_NAME)
+        check('Key Vault secret readable', bool(secret), f'{KEY_VAULT_URI} / {SECRET_NAME}')
+    except Exception as e:
+        check('Key Vault secret readable', False, str(e)[:300])
+else:
+    secret = CLIENT_SECRET
+    check('Client secret from Key Vault', False, 'using CLIENT_SECRET from the notebook (not recommended); move it to Key Vault when you can', required=False)
 
 
 def app_token(scope):

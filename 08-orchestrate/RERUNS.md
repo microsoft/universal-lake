@@ -28,7 +28,7 @@ Opening a notebook and running it is always allowed. It isn't logged to `ops.*`.
 
 * After any change in `dbo`, **run `Lake_Promote_Medallion`**, because the models read `gold`, not `dbo`. Use `TABLES='x'` for just that table.
 * After promote, refresh the model: run the orchestrator with `STEPS='refresh_universal'`, or refresh it in the workspace.
-* After an audit **backfill**, run the processor with **overwrite**, then promote, then refresh with `WRITE_MODE='overwrite'`. `RUN_MODE='backfill'` does all of that for you.
+* After an audit **backfill**, run the processor with **overwrite**, then promote, then refresh the models. `RUN_MODE='backfill'` does all of that for you.
 
 ## Is it safe to rerun this step?
 
@@ -51,16 +51,16 @@ Opening a notebook and running it is always allowed. It isn't logged to `ops.*`.
 | Step / message | Likely cause | Fix |
 |---|---|---|
 | any: `401` / `403` / `Authorization_RequestDenied` | Permission or consent missing | Run `Lake_Validate_Credentials`, then fix what it lists ([step 2](../02-permissions/README.md)) |
-| any: `Key Vault … Forbidden` | You (or the app) can't read the secret | Give the running identity **Key Vault Secrets User** |
+| any: `Key Vault … Forbidden` | You (or the app) can't read the secret | Give the running identity **Key Vault Secrets User**, or use the `config.json` bypass ([step 2.4](../02-permissions/README.md#24-store-the-client-secret)) |
 | `audit`: `Time budget of N min reached …` (`paused`) | A long backfill | `RERUN_FAILED=True` on the same `RUN_ID`, as many times as needed. On a large tenant, use `SCALE='large'`. |
 | `audit`: refuses, *unrecovered gap* | An older chunk failed for good | Run `RUN_MODE='backfill'` with `BACKFILL_DAYS` covering the gap |
 | `audit`: chunks keep failing even at 1 h | Audit service trouble | Wait and rerun. Staged chunks are kept. |
 | `licensed_users`: UPNs are 32-character hex strings, and nothing joins to org data | The reports setting conceals user names | Microsoft 365 admin center: **Settings > Org settings > Reports**, then clear *"Display concealed user, group, and site names"* |
 | `processor`: skipped, *dependency audit did not succeed* | Audit failed earlier in the run | Fix audit, then use `RERUN_FAILED` |
 | `promote`: *Required but not in gold* | The processor hasn't produced `copilot_interactions_curated` | Run `processor`, then `promote` |
-| `promote`: *gold_tables.json not found* | Models folder not uploaded | Upload `out/models` ([step 4.3](../04-import/README.md#43-upload-the-model-definitions)) |
+| `promote`: *gold_tables.json not found* | Models folder not uploaded | Upload `out/models` ([step 4.5](../04-import/README.md#45-upload-the-model-definitions)) |
 | `refresh_*`: SKIP, *no model_id* | Models not deployed | Run `Lake_Deploy_Models` |
-| `refresh_*` / 06: *credentials* or *data source* | Connection not bound, or the secret was rotated | Rerun 06 with `DEPLOY=False` |
+| `refresh_*`: *credentials* or *data source* | Connection not bound, or the secret was rotated | Run `Lake_Deploy_Models` with `DEPLOY=False` |
 | `notebook.run`: *not found* | Notebook missing, or not under its exact name | Import it again ([step 4](../04-import/README.md)) |
 | `agent365` failed and `agent365_lander` succeeded | Registry API unavailable. The CSV fallback filled `agents_365`. | No action needed. `RERUN_FAILED` will try the registry again. |
 | Timeout on any step | Large tenant | `SCALE='large'`, or rerun the step |

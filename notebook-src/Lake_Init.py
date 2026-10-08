@@ -22,8 +22,9 @@
 # %% [parameters]
 TENANT_ID = ''
 CLIENT_ID = ''
-KEY_VAULT_URI = ''
+KEY_VAULT_URI = ''                   # recommended; leave blank only if you use the CLIENT_SECRET bypass
 SECRET_NAME = 'universal-lake-client-secret'
+SECRET_IN_NOTEBOOKS = False          # True when config.json has clientSecret and no Key Vault (not recommended)
 SQL_ENDPOINT = ''                    # Lakehouse > SQL analytics endpoint > Settings > SQL connection string
 SCALE = 'standard'                   # 'standard' or 'large' (more than ~20k Copilot users, or busy audit logs)
 BACKFILL_DAYS = 30                   # audit history the first load fetches (max 180)
@@ -84,11 +85,16 @@ cfg_set({
     'workspace_id': workspace_id, 'workspace_name': workspace_name,
     'lakehouse_id': lakehouse_id, 'lakehouse_name': lakehouse_name, 'sql_endpoint': SQL_ENDPOINT,
     'tenant_id': TENANT_ID, 'client_id': CLIENT_ID, 'key_vault_uri': KEY_VAULT_URI, 'secret_name': SECRET_NAME,
+    'secret_mode': 'notebook' if SECRET_IN_NOTEBOOKS else 'keyvault',
     'scale': SCALE, 'backfill_days': BACKFILL_DAYS, 'modules': MODULES,
     'model_id.universal': MODEL_ID_UNIVERSAL, 'model_id.consumption': MODEL_ID_CONSUMPTION,
     'model_id.agentEvaluator': MODEL_ID_AGENT_EVALUATOR,
 })
 display(spark.table('ops.config').orderBy('key'))
-missing = [k for k in ('tenant_id', 'client_id', 'key_vault_uri', 'sql_endpoint') if not cfg(k)]
+missing = [k for k in ('tenant_id', 'client_id', 'sql_endpoint') if not cfg(k)]
+if not SECRET_IN_NOTEBOOKS and not cfg('key_vault_uri'):
+    missing.append('key_vault_uri (or use the clientSecret bypass)')
+if SECRET_IN_NOTEBOOKS:
+    print('WARNING: no Key Vault. The client secret is inside the notebooks; move it to Key Vault when you can.')
 if missing:
     print('Still to set (rerun this notebook with them filled in):', ', '.join(missing))

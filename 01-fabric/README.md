@@ -1,66 +1,64 @@
 # Step 1: Fabric capacity, workspace and Lakehouse
 
-Everything this repo builds lives in **one Fabric workspace**: one Lakehouse, about 20 notebooks and up to three semantic models. This step gets that workspace ready. You need nothing from your PC yet.
+Everything lives in **one Fabric workspace**: one Lakehouse, about 20 notebooks and up to three semantic models. Nothing is needed on your PC yet.
 
 ## 1.1 Pick a capacity
 
-Notebooks and Lakehouses are Fabric items, so the workspace must run on a **Fabric capacity**. A Power BI Pro or PPU workspace on its own is not enough, and *My workspace* can't be used.
+Notebooks need a **Fabric capacity** (F SKU) or a Fabric trial. A Pro or PPU workspace alone won't do, and *My workspace* can't be used.
 
-| Your situation | Capacity | Notes |
+| Your situation | Use | Notes |
 |---|---|---|
-| Trying it out | **Fabric trial** (free for 60 days, equivalent to F64) | Start one from *Account manager > Start trial* in the Fabric portal. When the trial ends, move the workspace to a paid capacity or the items stop running. |
-| Up to about 10k people with Copilot | **F2** or larger | F2 costs about USD 263 a month pay-as-you-go (about USD 156 reserved). A 30-day first load usually finishes in under an hour. |
-| More than about 10-20k people, or a very busy audit log | **F64** or larger | Also set `scale` to `large` in step 3, which uses 2-hour audit windows and longer timeouts. A first load can take several hours. |
+| Trying it out | **Fabric trial** (free, 60 days, F64-sized) | Fabric portal > your account picture > **Start trial**. Move to paid capacity before it ends. |
+| Up to ~10,000 people with Copilot | **F2** or larger | A 30-day first load usually takes under an hour. |
+| More than ~10–20k people | **F64** or larger | Also set `scale` to `large` in step 3. A first load can take several hours. |
 
-Things that catch people out:
+Good to know:
 
-* **Report viewers below F64.** On F2 to F32, anyone who opens a report on these models needs a **Power BI Pro or PPU** licence. From F64 up, viewers with a free licence can read them.
-* **`TooManyRequestsForCapacity`.** Small capacities and trials throttle when many notebooks start at once. The orchestrator runs steps one after another to avoid this. If it still happens, wait a few minutes and re-run only the failed steps (see [Reruns](../08-orchestrate/RERUNS.md)).
-* **Paused capacity.** A paused capacity runs nothing, including schedules. Resume it before a run.
-* **Region.** The capacity's region is where your data is stored. Pick one that meets your data residency rules.
+* **Below F64**, everyone who opens a report on these models needs Power BI Pro or PPU.
+* **The capacity must be running.** A paused capacity runs nothing, including schedules.
+* **The capacity's region is where the data is stored.**
 
 ## 1.2 Create the workspace
 
-1. In the Fabric portal, go to **Workspaces > New workspace**.
-2. Give it a name, for example `Universal Data Lake`.
-3. Under **Advanced > License mode**, choose **Fabric capacity** (or **Trial**) and select the capacity from 1.1.
-4. Choose **Apply**.
+1. Fabric portal > **Workspaces > New workspace**. Name it, e.g. `Universal Data Lake`.
+2. **Advanced > License mode**: **Fabric capacity** (or **Trial**), pick the capacity, **Apply**.
+3. Make sure you are **Admin** or **Member** (*Manage access*). Anyone else who runs notebooks needs **Contributor** or above.
 
-Then, in **Workspace settings**:
+## 1.3 Create the Lakehouse, with schemas
 
-| Setting | Where | Set to | Why |
-|---|---|---|---|
-| License | *License info* | Fabric capacity or Trial | Check it again here; notebooks won't run otherwise |
-| High concurrency (optional) | *Data Engineering/Science > Spark settings > High concurrency* | **On** | Lets the notebooks you run by hand in step 5 share one Spark session instead of starting a new one each time (the orchestrator already shares its session). Needs workspace **Admin**. |
-| Access | *Manage access* | You as **Admin** or **Member**; anyone else who runs notebooks as **Contributor** or above | Notebooks run as the person who starts them (or the schedule owner) |
+1. In the workspace: **New item > Lakehouse**. Name it `UniversalLake_LH`.
+2. **Tick _Lakehouse schemas_**, then **Create**.
 
-Copy the workspace **ID** from the browser address bar: `https://app.fabric.microsoft.com/groups/<workspace-id>/...`. You'll put it into `config.json` in step 3.
+> **Schemas can't be turned on later.** If you missed the box, delete the Lakehouse and create it again. You'll know it's right when the Lakehouse explorer shows a **`dbo`** folder under *Tables*.
 
-## 1.3 Create the Lakehouse: tick "Lakehouse schemas"
+Fabric also creates a **SQL analytics endpoint** with the same name. The semantic models read through it.
 
-1. In the workspace, choose **New item > Lakehouse**.
-2. Name it `UniversalLake_LH` (any name works, but the docs use this one).
-3. **Tick _Lakehouse schemas_.** Then choose **Create**.
+## 1.4 Copy three values from Fabric
 
-> **You can't turn schemas on later.** The bronze, silver, gold and ops layers are Lakehouse schemas. If you create the Lakehouse without them, delete it and create a new one. `Lake_Init` stops with a clear error if it finds a Lakehouse without schemas.
+You'll paste these into `config.json` in step 3. Keep them private.
 
-A new Lakehouse also creates a **SQL analytics endpoint** item with the same name. The semantic models read the gold tables through it.
+**Workspace ID and Lakehouse ID are in the browser address bar.** Open the Lakehouse and look at the URL:
 
-## 1.4 Note down three values
+```
+https://app.fabric.microsoft.com/groups/<workspace-id>/lakehouses/<lakehouse-id>?experience=fabric-developer
+                                        ^ workspace ID            ^ lakehouse ID
+```
 
-You need these in step 3. Keep them somewhere private (not in this repo).
+* **Workspace ID**: the GUID right after `/groups/`.
+* **Lakehouse ID**: the GUID right after `/lakehouses/`, up to the `?`.
 
-| Value | Where to find it |
-|---|---|
-| Workspace ID | The URL: `/groups/<workspace-id>/` |
-| Lakehouse ID | Open the Lakehouse; the URL ends in `/lakehouses/<lakehouse-id>` |
-| SQL endpoint host | Open the **SQL analytics endpoint** item, then **Settings > SQL endpoint > SQL connection string**. Copy **only the host**, which looks like `xxxx.datawarehouse.fabric.microsoft.com`. |
+(Each ID looks like `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`. If the URL says `/groups/me/`, you're in *My workspace*: switch to the workspace from 1.2.)
+
+**SQL endpoint host:**
+
+1. In the workspace list, open the item of type **SQL analytics endpoint** named `UniversalLake_LH`.
+2. **Settings** (gear) > **SQL endpoint** > copy the **SQL connection string**.
+3. Keep **only the host name**, which looks like `abcd1234efgh.datawarehouse.fabric.microsoft.com`. No `https://`, no port, nothing after it.
 
 ## Checklist
 
-- [ ] The workspace runs on a Fabric capacity or trial (*License info*).
-- [ ] You are **Admin** or **Member** of it.
-- [ ] `UniversalLake_LH` exists and its explorer shows a **`dbo`** schema (that's how you know schemas are on).
+- [ ] Workspace on a Fabric capacity or trial, and you are Admin or Member.
+- [ ] `UniversalLake_LH` shows a `dbo` folder (schemas are on).
 - [ ] You have the workspace ID, Lakehouse ID and SQL endpoint host.
 
-Next: [Step 2: Permissions and app registration](../02-permissions/README.md)
+Next: [Step 2: Permissions](../02-permissions/README.md)

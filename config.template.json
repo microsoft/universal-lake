@@ -1,5 +1,5 @@
 {
-  "$comment": "Copy to config.json (git-ignored) and fill in. Values marked <...> are required. Never put the client secret here: it lives in Key Vault.",
+  "$comment": "Copy to config.json (git-ignored) and fill in. Values marked <...> are required. Recommended: keep the client secret in Key Vault and leave clientSecret empty. Bypass (NOT recommended, e.g. a first run with no Key Vault yet): leave keyVault.uri as it is and put the secret in clientSecret; it is then written into the generated notebooks.",
   "sourceRepo": "<path-to-source-repo-clone>",
   "pinnedCommit": "52c1965d53d73d459b62a4c927865f2300049fe6",
 
@@ -9,6 +9,7 @@
     "uri": "https://<your-vault>.vault.azure.net/",
     "secretName": "universal-lake-client-secret"
   },
+  "clientSecret": "",
 
   "workspace": { "id": "<fabric-workspace-guid>", "name": "<workspace name>" },
   "lakehouse": {

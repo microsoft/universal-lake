@@ -1,84 +1,60 @@
 # Step 5: Ingest
 
-The ingesters pull from Graph, Azure, Dataverse and uploaded CSVs into **`dbo`** tables. These are the installer's notebooks, unchanged. This stage shows how to run them **one at a time**, see exactly what history each one fetches, and fix them one at a time.
+The ingesters pull from Graph, Azure, Dataverse and your uploaded CSVs into `dbo` tables. Run them through `Lake_Orchestrator` so every step is logged.
 
-## Two ways to run a step
+## How to run one step
 
-| Way | How | Logged to `ops.*` | Use it when |
-|---|---|---|---|
-| **One orchestrator step** (recommended) | Open `Lake_Orchestrator`, set `STEPS = 'audit'` (or any step name below) and `RUN_MODE`, then **Run all** | yes: `run_log` and `backfill_ledger` | Normal manual runs. The arguments are the same ones the full run would pass. |
-| **Open the notebook itself** | Open it, change its parameters cell, then **Run all** | no | Debugging: you see every cell's output and can stop half-way |
+1. Open `Lake_Orchestrator`.
+2. In its first cell set `STEPS = 'audit'` (any step name below) and `RUN_MODE = 'first_load'`.
+3. **Run all**.
 
-Run the steps in the order below on a first load. The processor needs `audit` and `licensed_users`, and the orchestrator enforces that.
+Set `DRY_RUN = True` first if you want to see the plan and date ranges without running anything. To run everything in one go, leave `STEPS` blank; that's [step 8](../08-orchestrate/README.md).
 
-Use `DRY_RUN = True` in the orchestrator to print the plan, the arguments and the history window of each step without running anything.
+(You can also open an ingester notebook and **Run all** to watch each cell, but then nothing is logged to `ops`.)
 
 ## The steps, in order
 
-| # | Step (`STEPS` name) | Notebook | Module | Writes (`dbo`) | History it reads | Timeout std / large |
-|---|---|---|---|---|---|---|
-| 1 | `audit` | `Copilot_Audit_Log_Direct_Ingester` | core | `copilot_interactions_parsed` | **Backfill**: `BACKFILL_DAYS` (≤180). **Incremental**: since its last load plus a `LOOKBACK_DAYS` requery. | 2 h / 6 h |
-| 2 | `licensed_users` | `Copilot_Licensed_Users_Direct_Ingester` | core | `copilot_licensed_users` | Snapshot: Graph report period D7, overwrite | 15 / 30 min |
-| 3 | `agent365` | `Copilot_Agent365_Registry_Ingester` (falls back to `Copilot_Agent365_Lander` if it fails) | agent365 | `agents_365`, `agents_365_history`, `agents_365_detail_cache` | Snapshot plus history. Details are incremental, with a full refresh every 7 days. | 15 min |
-| 4 | `processor` | `Copilot_Audit_Log_Processor` | core | `copilot_interactions_curated` | All of `copilot_interactions_parsed` (see [step 6](../06-process/README.md)) | 2 h / 3 h |
-| 5 | `upload_router` | `AnalyticsHub_Upload_Router` | core | `analytics_hub_upload_log`, and moves files | Every CSV in `Files/analytics_hub_uploads` | 30 min |
-| 6 | `org_data` | `Copilot_Org_Data_Direct_Ingester` | orgData | `copilot_org_data` (+ hierarchy) | Snapshot of every user, overwrite | 30 min / 1 h |
-| 7 | `m365_activity` | `Copilot_M365_Activity_Ingester` | m365Activity | `m365_activity_daily` | Incremental and self-managed: re-reads the last 4 days | 1 h / 2 h |
-| 8 | `product_feedback` | `Copilot_ProductFeedback_Ingester` | productFeedback | `user_feedback` | Every uploaded export, overwrite | 30 min |
-| 9 | `transcripts` | `AgentEval_Transcript_Parser` | agentEvaluator | `agent_*` | **Backfill**: last `BACKFILL_DAYS`. **Incremental**: last 14 days. Merge. | 2 h |
-| 10 | `azure_ai` | `Consumption_Ingest_Azure_AI` | consumption | `azure_*` | The last 90 days, overwrite | 1 h |
-| 11 | `studio` | `Consumption_Ingest_Studio` | consumption | `studio_*` | Every file in `Files/landing/studio` | 30 min |
-| 12 | `viva` | `Consumption_Ingest_Viva` | consumption | `viva_*` | Every file in `Files/landing/viva` | 30 min |
+| # | `STEPS` name | What it loads | History | Module |
+|---|---|---|---|---|
+| 1 | `audit` | Every Copilot prompt and agent run | **First load / backfill**: last `backfillDays`. **Daily**: since the last load, re-reading a few days. | core |
+| 2 | `licensed_users` | Who has a Copilot licence | Latest snapshot | core |
+| 3 | `agent365` | Agent registry (CSV lander if the API fails) | Latest snapshot + history | agent365 |
+| 4 | `processor` | Builds the curated fact table (step 6) | All loaded audit data | core |
+| 5 | `upload_router` | Moves CSVs from `Files/analytics_hub_uploads` | Every file there | core |
+| 6 | `org_data` | Department, title, country, manager | Latest snapshot | orgData |
+| 7 | `m365_activity` | Daily Teams, Outlook, Word, Excel… use | Last 4 days, merged | m365Activity |
+| 8 | `product_feedback` | Copilot feedback | Every uploaded export | productFeedback |
+| 9 | `transcripts` | Copilot Studio transcripts | First load: `backfillDays`; daily: 14 days | agentEvaluator |
+| 10–12 | `azure_ai`, `studio`, `viva` | Azure AI cost; Studio and Cowork credits | Azure: 90 days; others: every uploaded file | consumption |
 
-Steps 13 and later (promote, refresh, data check) are covered in [step 6](../06-process/README.md), [step 7](../07-semantic-model/README.md) and [step 8](../08-orchestrate/README.md).
+On a first load run 1, 2 and 4 first (`STEPS = 'audit,licensed_users,processor'`), then the rest. Steps for sources you didn't pick are skipped.
 
-**Workday CSV source only**: the orchestrator doesn't run `Copilot_Org_Data_Workday_Lander`. Run it by hand after you drop the extract in `Files/org_workday`, then run `org_data`.
+**Workday only**: run `Copilot_Org_Data_Workday_Lander` by hand after uploading the extract, then `org_data`.
 
-**Which notebooks accept arguments.** Only the audit ingester, processor, transcript parser and refresh notebook have a tagged parameters cell. The others always use the values `npm run sync` baked in. To change those values (for example the licensed-users report period), edit the notebook in Fabric, or change `config.json`, rebuild and re-import.
+## The audit backfill: what to expect
 
-## Backfill: what is fetched and when
+* It fetches one query per day (`standard`) or per 2 hours (`large`). A 30-day backfill on `standard` is 30 queries.
+* Each finished chunk is saved to `Files/_audit_staging`, so **a re-run resumes** instead of starting over.
+* After 90 minutes (`standard`) or 5 hours (`large`) it stops and the step shows **`paused`**. That's normal for big backfills: run it again with the same `RUN_ID` and `RERUN_FAILED = True` until it says `succeeded`.
+* A chunk that keeps failing becomes a **gap**. Daily runs refuse to start until you run `RUN_MODE = 'backfill'` over that period.
+* The audit log keeps 180 days, so `backfillDays` can't be more than 180.
 
-The orchestrator **prints the window before each step** and writes it to `ops.backfill_ledger` as `planned`, then marks it `done`, `failed` or `paused`. So you can always answer *"which run fetched which days?"*
-
-| `RUN_MODE` | Audit ingester gets | Processor | Transcripts |
-|---|---|---|---|
-| `first_load` | `MODE='backfill'`, `BACKFILL_DAYS` | `WRITE_MODE='overwrite'` | `LOOKBACK_DAYS = BACKFILL_DAYS` |
-| `backfill` | the same as `first_load` | overwrite | `BACKFILL_DAYS` |
-| `incremental` | `MODE='incremental'`: from the newest record already loaded, minus `LOOKBACK_DAYS` | `merge` | 14 days |
-
-The `SCALE` profile changes how the audit window is fetched, not how much is fetched:
-
-| | `standard` | `large` |
-|---|---|---|
-| `CHUNK_HOURS` (one audit query per chunk) | 24 | 2 |
-| `TIME_BUDGET_MIN` (fetch time before it pauses) | 90 | 300 |
-| `WINDOW_RETRIES`, `LOOKBACK_DAYS` | notebook defaults (3, 7) | 1, 3 |
-| Notebook timeout | 2 h | 6 h |
-
-### How the audit backfill behaves (important)
-
-* The audit service answers one query per chunk. A 90-day backfill on `standard` is 90 queries, run 5 at a time.
-* Every finished chunk is saved to `Files/_audit_staging` before anything is written to the table. **A rerun resumes**: chunks already fetched are reused, not queried again.
-* When `TIME_BUDGET_MIN` runs out, the notebook stops with *"Time budget …"*. The orchestrator records this as **`paused`**, not failed. **Run the same step again** (same `RUN_MODE`, or `RERUN_FAILED` on the same `RUN_ID`) until it reports done. Large tenants often need several runs for 180 days.
-* A failing chunk is retried and then split into smaller chunks, down to 1 hour. A chunk that still fails is a **gap**. `incremental` refuses to run while an unrecovered gap exists. Run a `backfill` that covers that period to repair it.
-* The audit log keeps 180 days, so `BACKFILL_DAYS` can't be more than 180.
-
-Watch it:
+See what was fetched:
 
 ```sql
-SELECT run_id, source, mode, window_start, window_end, days, status, note, recorded_at
+SELECT run_id, source, mode, window_start, window_end, days, status, note
 FROM ops.backfill_ledger ORDER BY recorded_at DESC LIMIT 20;
 ```
 
 ## When a step fails
 
-1. Find the error. Every `end` row in `ops.run_log` has the full error text:
+1. Read the error:
    ```sql
-   SELECT step, status, duration_s, error FROM ops.run_log
+   SELECT step, status, error FROM ops.run_log
    WHERE run_id = '<run_id>' AND event = 'end' ORDER BY step_no;
    ```
-2. **401 or 403**: run `Lake_Validate_Credentials`. It names the missing permission.
-3. **Timeout**: re-run the step. Audit and transcripts resume. Snapshots simply reload.
-4. Re-run only that step: `Lake_Orchestrator` with `RUN_ID = '<run_id>'` and `RERUN_FAILED = True`. See [RERUNS.md](../08-orchestrate/RERUNS.md).
+2. **401 / 403**: run `Lake_Validate_Credentials`; it names what's missing.
+3. **Timeout or `paused`**: run it again. Audit and transcripts resume.
+4. To retry only what failed: `RUN_ID = '<run_id>'`, `RERUN_FAILED = True`. More in [RERUNS.md](../08-orchestrate/RERUNS.md).
 
 Next: [Step 6: Process and promote](../06-process/README.md)

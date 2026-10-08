@@ -1,121 +1,83 @@
-# Step 4: Import into Fabric and initialise
+# Step 4: Import into Fabric and set up the Lakehouse
 
-You take what `npm run all` built in `out/` and put it into the workspace from step 1: notebooks, model definitions and, if you use them, CSV exports. Then two notebooks set up the Lakehouse and check every credential. Nothing is ingested yet.
+Put the files from `out/` into the workspace, set up the Lakehouse, and check every credential. Nothing is ingested yet.
+
+Order matters: `Lake_Init` (4.3) creates the Lakehouse folders that 4.5 and 4.6 upload into.
 
 ## 4.1 Import the notebooks
 
-1. Open the workspace and choose **Import > Notebook > From this computer**.
-2. Select **every `.ipynb` file in `out/notebooks/`** (you can select them all at once) and choose **Open**. Don't import the copies in the numbered folders of this repo: those have no Lakehouse attached and no parameters filled in.
-3. Wait until they all appear in the workspace list.
+1. Open the workspace > **Import > Notebook > From this computer**.
+2. Select **all `.ipynb` files in `out/notebooks/`** at once > **Open**.
+   *Not* the copies in this repo's numbered folders: those have no Lakehouse attached and no values filled in.
+3. Wait until they all show in the workspace (about 20, depending on your sources; `out/notebooks/MANIFEST.json` lists them).
 
-| Group | Notebooks |
-|---|---|
-| This repo | `lake_ops`, `Lake_Init`, `Lake_Validate_Credentials`, `Lake_Promote_Medallion`, `Lake_Deploy_Models`, `Lake_Orchestrator` |
-| Core | `Copilot_Audit_Log_Direct_Ingester`, `Copilot_Licensed_Users_Direct_Ingester`, `Copilot_Audit_Log_Processor`, `AnalyticsHub_Upload_Router`, `AnalyticsHub_Refresh_Model`, `AnalyticsHub_Data_Check`, `AnalyticsHub_Load_Status` (not used here; `ops.run_log` replaces it) |
-| `orgData` | `Copilot_Org_Data_Direct_Ingester` (and `Copilot_Org_Data_Workday_Lander` with Workday) |
-| `m365Activity` | `Copilot_M365_Activity_Ingester` |
-| `agent365` | `Copilot_Agent365_Registry_Ingester`, `Copilot_Agent365_Lander` |
-| `productFeedback` | `Copilot_ProductFeedback_Ingester` |
-| `consumption` | `Consumption_Ingest_Azure_AI`, `Consumption_Ingest_Studio`, `Consumption_Ingest_Viva` |
-| `agentEvaluator` | `AgentEval_Transcript_Parser` |
-
-`out/notebooks/MANIFEST.json` is the exact list for your configuration.
-
-**Names must not change.** The orchestrator runs notebooks by name, and every repo notebook starts with `%run lake_ops`. If a notebook with the same name already exists, Fabric doesn't overwrite it: it imports the new one as `lake_ops 1` (or similar), and the old one keeps running. When you re-import, **delete the old notebook first**, then import again.
+> **Don't rename notebooks.** They call each other by name. When re-importing, **delete the old notebook first**: Fabric doesn't overwrite, it imports a copy named `lake_ops 1`, and the old one keeps being used.
 
 ## 4.2 Check the Lakehouse is attached
 
-Open any two of the imported notebooks, for example `Lake_Init` and `Copilot_Audit_Log_Direct_Ingester`. In the **Explorer** pane on the left, `UniversalLake_LH` should be listed under *Lakehouses* with a pin (**default**).
+Open `Lake_Init`. In the **Explorer** pane on the left, `UniversalLake_LH` should be under *Lakehouses*, marked as default (pin icon).
 
-If it isn't there (because `config.json` had no Lakehouse ID when you built), in **each** notebook choose **Add data items > Existing data source**, pick `UniversalLake_LH`, then open its **...** menu and choose **Set as default lakehouse**. Or fix `config.json`, run `npm run all`, delete the notebooks and import them again; that's quicker for 20 notebooks.
+If it isn't, `workspace.id` or `lakehouse.id` was wrong in `config.json`. Fix it, `npm run all`, delete the notebooks and import again. (Attaching by hand works too, **Add data items > Existing data source**, but you'd have to do it in every notebook.)
 
-## 4.3 Upload the model definitions
+## 4.3 Run `Lake_Init`
 
-1. Open `UniversalLake_LH`.
-2. In the explorer, right-click **Files** and choose **New subfolder**, named `universal_lake`. (`Lake_Init` also creates it, so if you run 4.5 first it is already there.)
-3. Right-click `universal_lake`, choose **Upload > Upload folder** and pick the **`out/models`** folder itself (not its contents).
+Open `Lake_Init` and choose **Run all**. The first cell (parameters) is already filled in from `config.json`. The first run takes a minute or two while Spark starts.
 
-You should end up with:
+It creates:
 
-```
-Files/universal_lake/models/gold_tables.json
-Files/universal_lake/models/universal/definition.json
-Files/universal_lake/models/consumption/definition.json
-Files/universal_lake/models/agentEvaluator/definition.json
-```
+* schemas `bronze`, `silver`, `gold`, `ops` (next to `dbo`);
+* `ops.config` with your settings, which the other notebooks read;
+* the `Files/` folders for uploads, including `Files/universal_lake/`.
 
-If you see `Files/universal_lake/universal/...` (no `models` level) or `Files/models/...`, you uploaded the wrong level: delete it and upload again. The other files in those folders (`model.bim`, `relationships.txt` and so on) are for you to read; the notebooks ignore them.
+It ends by listing any setting that is still missing. It is safe to re-run; it never deletes anything.
 
-## 4.4 Upload your CSV exports (only for `csv` sources)
+| If it stops with | Fix |
+|---|---|
+| *This Lakehouse is not schema-enabled* | The *Lakehouse schemas* box wasn't ticked. Recreate the Lakehouse ([1.3](../01-fabric/README.md#13-create-the-lakehouse-with-schemas)), update `lakehouse.id`, rebuild and re-import. |
+| *No default Lakehouse* | See 4.2. |
 
-For each source you set to `csv` in step 3, download the export and upload it to the matching Lakehouse folder (created by `Lake_Init` in 4.5). If you're not sure which folder, put it in `Files/analytics_hub_uploads`: the Upload Router recognises the file and moves it.
+## 4.4 Run `Lake_Validate_Credentials`
+
+Open it > **Run all**. It writes nothing; run it as often as you like, and again whenever an ingester fails with 401 or 403.
+
+| Check | If it fails |
+|---|---|
+| Client secret from Key Vault | Give yourself *Key Vault Secrets User* on the vault. With the `config.json` bypass this shows as a **warning**, which is expected. |
+| Graph token | Wrong tenant ID or app ID, or the secret expired or was mistyped. |
+| Graph permissions for `<module>` | Add the permission and grant admin consent ([2.3](../02-permissions/README.md#23-register-the-app)). Wait a few minutes, re-run. |
+| Audit log query API | Turn on audit logging. New tenants: wait 24 hours. |
+| Usage reports show real user names | Turn off concealed names ([2.2](../02-permissions/README.md#22-turn-on-tenant-settings)). |
+| Copilot packages API | No Agent 365 in the tenant: set `dataSources.agent365` to `csv`, rebuild. |
+| Azure subscription / cost query | Give the app the three reader roles ([2.5](../02-permissions/README.md#25-give-the-app-access-to-what-it-reads)). |
+| Dataverse / transcripts | Add the app as an application user with Bot Transcript Viewer. |
+
+**Don't continue until every required check passes.** It raises an error at the end if one fails.
+
+## 4.5 Upload the model definitions
+
+1. Open `UniversalLake_LH`. In the explorer, **Files > universal_lake** (created by 4.3).
+2. Click **…** next to `universal_lake` > **Upload > Upload folder** > select the **`out/models`** folder itself.
+3. If Fabric asks about existing files, choose to overwrite.
+4. Check you now have `Files/universal_lake/models/gold_tables.json` and `Files/universal_lake/models/universal/definition.json`.
+
+If you see `Files/universal_lake/universal/...` (no `models` level), you uploaded the folder's contents instead of the folder: delete it and upload again.
+
+## 4.6 Upload CSV exports (only sources set to `csv`)
+
+Upload each export to its folder under **Files** (created by 4.3). Not sure which? Use `Files/analytics_hub_uploads`; the upload router recognises the file and moves it. You can also do this later.
 
 | Source | Folder | Export from |
 |---|---|---|
-| Any | `Files/analytics_hub_uploads` | The router works out where it belongs |
-| `agent365` | `Files/agent365` | Microsoft 365 admin center > Agents > All agents > Export (`agents.csv`) |
-| `productFeedback` | `Files/product_feedback` | Microsoft 365 admin center > Health > Product feedback > Export |
-| `studioCredits` | `Files/landing/studio` | Power Platform admin center > Licensing > Products > Copilot Studio: the Summary, Environments and Agents exports |
-| `coworkCredits` | `Files/landing/viva` | Viva Insights > Copilot Consumption Dashboard > Export (both CSVs) |
-| `workday` | `Files/org_workday` | A Workday report of active workers with Primary Work Email, exported to CSV |
-
-You can skip this now and upload later; the ingesters just find nothing to load.
-
-## 4.5 Run `Lake_Init`
-
-Open `Lake_Init`. Its parameters cell is already filled in from `config.json`; check it looks right:
-
-| Parameter | Notes |
-|---|---|
-| `TENANT_ID`, `CLIENT_ID`, `KEY_VAULT_URI`, `SECRET_NAME` | Saved to `ops.config`, so the other notebooks read them from there |
-| `SQL_ENDPOINT` | Host only. Used by `Lake_Deploy_Models` for the model connection. |
-| `SCALE`, `BACKFILL_DAYS` | From `scale` and `backfillDays`. You can override the backfill days per run later. |
-| `MODULES` | The modules your `dataSources` switch on. The orchestrator skips steps for anything not listed. |
-| `MODEL_ID_*` | Leave blank. `Lake_Deploy_Models` fills these in. |
-
-Choose **Run all**. The first run takes a minute or two while Spark starts. It is safe to re-run: it never drops anything, and a blank parameter never wipes a saved value.
-
-What it creates:
-
-| Schema | Holds | Written by |
-|---|---|---|
-| `dbo` | The ingesters' working tables, exactly as the installer writes them | Ingesters and processor (step 5 and 6) |
-| `bronze` | Raw extracts: parsed audit records, raw payloads, upload and load logs | `Lake_Promote_Medallion` |
-| `silver` | Cleaned intermediate tables and history that the models don't read | `Lake_Promote_Medallion` |
-| `gold` | Exactly the tables the semantic models read | `Lake_Promote_Medallion` |
-| `ops` | `config`, `run_log`, `backfill_ledger`, `table_layers` | Every `Lake_*` notebook |
-
-plus the `Files/` folders in 4.4 and `Files/universal_lake/`.
-
-The notebook ends by listing any required setting that is still blank. Check it with:
-
-```sql
-SELECT * FROM ops.config ORDER BY key;
-```
-
-If it stops with "This Lakehouse is not schema-enabled", the Lakehouse was created without *Lakehouse schemas*: go back to [step 1.3](../01-fabric/README.md#13-create-the-lakehouse-tick-lakehouse-schemas). If it stops with "No default Lakehouse", see 4.2.
-
-## 4.6 Run `Lake_Validate_Credentials`
-
-Open it and choose **Run all**. Its parameters are filled in from `config.json`. It writes nothing, so you can run it as often as you like; run it again whenever an ingester fails with 401 or 403.
-
-| Check | Fix if it fails |
-|---|---|
-| Key Vault secret readable | Give yourself *Key Vault Secrets User* on the vault. |
-| Graph token | Wrong tenant or app ID, or an expired secret. Run `setup-app.ps1 -RotateSecret`. |
-| Graph permissions for `<module>` | Add the missing permission and grant consent. New consent can take a few minutes to appear in tokens. |
-| Audit log query API | Turn on audit logging. New tenants can take 24 hours. |
-| Usage reports show real user names | Turn off report name concealment. |
-| Copilot packages API | The tenant needs Copilot and Agent 365. Otherwise set `dataSources.agent365` to `csv`. |
-| Azure subscription and cost query | Assign the three reader roles on that subscription. |
-| Dataverse application user, transcripts readable | Add the application user and the Bot Transcript Viewer role. |
-
-With `STRICT = True` (the default) it raises at the end if any required check failed. **Don't start step 5 until every required check passes.**
+| `agent365` | `Files/agent365` | Microsoft 365 admin center > **Agents > All agents > Export** |
+| `productFeedback` | `Files/product_feedback` | Microsoft 365 admin center > **Health > Product feedback > Export** |
+| `studioCredits` | `Files/landing/studio` | Power Platform admin center > **Licensing > Copilot Studio**: Summary, Environments and Agents exports |
+| `coworkCredits` | `Files/landing/viva` | Viva Insights > **Copilot Consumption Dashboard > Export** (both CSVs) |
+| `workday` | `Files/org_workday` | Workday report of active workers with Primary Work Email, as CSV |
 
 ## Re-building later
 
-* **Config change** (new module, data source or subscription): `npm run all`, then delete and re-import the notebooks that `sync` reports as changed or new.
-* **New source version**: see [Where the notebook code comes from](../README.md#where-the-notebook-code-comes-from).
-* **Only the models changed**: `npm run models`, re-upload `out/models`, then run `Lake_Deploy_Models` (step 7).
+* **Changed `config.json`** (new source, new secret with the bypass, etc.): `npm run all`, then delete and re-import the notebooks it reports as changed.
+* **Only the models changed**: `npm run models`, re-upload `out/models` (4.5), run `Lake_Deploy_Models` (step 7).
+* **Newer source version**: see [Where the notebook code comes from](../README.md#where-the-notebook-code-comes-from).
 
 Next: [Step 5: Ingest](../05-ingest/README.md)

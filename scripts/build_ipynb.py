@@ -29,7 +29,14 @@ PARAM = re.compile(r"^([A-Z_][A-Z0-9_]*) = (?:'[^']*'|\d+|True|False)(\s+#.*)?$"
 
 
 def is_set(v):
+    if isinstance(v, bool):
+        return True
     return v not in (None, "") and "<" not in str(v)
+
+
+def inline_secret(cfg):
+    """No Key Vault URI but a clientSecret in config.json: the secret goes into the notebooks (not recommended)."""
+    return not is_set(cfg.get("keyVault", {}).get("uri")) and is_set(cfg.get("clientSecret"))
 
 
 def prefill_values(cfg):
@@ -43,11 +50,14 @@ def prefill_values(cfg):
     modules = json.loads(lock.read_text(encoding="utf-8")).get("modules", []) if lock.exists() else []
     if isinstance(modules, dict):
         modules = ["core"] + [k for k, on in modules.items() if on and k != "core"]
+    inline = inline_secret(cfg)
     values = {
         "TENANT_ID": cfg.get("tenantId"),
         "CLIENT_ID": cfg.get("appId"),
-        "KEY_VAULT_URI": kv.get("uri"),
+        "KEY_VAULT_URI": None if inline else kv.get("uri"),
         "SECRET_NAME": kv.get("secretName"),
+        "CLIENT_SECRET": cfg.get("clientSecret") if inline else None,
+        "SECRET_IN_NOTEBOOKS": inline,
         "SQL_ENDPOINT": lh.get("sqlEndpoint"),
         "SCALE": cfg.get("scale"),
         "BACKFILL_DAYS": cfg.get("backfillDays"),
@@ -71,7 +81,7 @@ def prefill(nb, values):
             m = PARAM.match(body)
             if m and m.group(1) in values:
                 v = values[m.group(1)]
-                lit = str(int(v)) if isinstance(v, int) else repr(str(v))
+                lit = str(v) if isinstance(v, bool) else str(int(v)) if isinstance(v, int) else repr(str(v))
                 body = f"{m.group(1)} = {lit}{m.group(2) or ''}"
                 filled.append(m.group(1))
             src.append(body + ("\n" if line.endswith("\n") else ""))
@@ -136,7 +146,7 @@ if __name__ == "__main__":
                 "default_lakehouse": lh["id"], "default_lakehouse_name": lh.get("name", ""),
                 "default_lakehouse_workspace_id": ws["id"], "known_lakehouses": [{"id": lh["id"]}]}})
             # Setup notebooks get their parameters from config.json, so nothing is copied by hand.
-            if name in ("Lake_Init.py", "Lake_Validate_Credentials.py"):
+            if name in ("Lake_Init.py", "Lake_Validate_Credentials.py", "Lake_Deploy_Models.py"):
                 filled = prefill(bound, prefill_values(cfg))
                 print(f"  out/notebooks/{pathlib.Path(target).name}: filled {', '.join(filled) or 'nothing'}")
             dest = ROOT / "out" / "notebooks" / pathlib.Path(target).name
@@ -144,5 +154,7 @@ if __name__ == "__main__":
             dest.write_text(json.dumps(bound, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     if bind:
         print(f"Bound copies for Lakehouse {lh.get('name')} ({lh['id']}) written to out/notebooks/")
+        if inline_secret(cfg):
+            print("WARNING: the client secret is written into out/notebooks (no Key Vault). Don't share or commit them.")
     else:
         print("No filled-in config.json: notebooks are unbound; attach the Lakehouse in Fabric after import.")
