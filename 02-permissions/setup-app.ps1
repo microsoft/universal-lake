@@ -122,7 +122,7 @@ if ($Modules -contains 'consumption' -and $AzureSubscriptionIds) {
 }
 
 $vault = Az @('keyvault', 'show', '--name', $KeyVaultName, '-o', 'json') -Quiet | ConvertFrom-Json
-Write-Host "`n== Done. Put these in config.json and in 02_Init_Lakehouse's parameters:" -ForegroundColor Green
+Write-Host "`n== Done. Put these in config.json and in Lake_Init's parameters:" -ForegroundColor Green
 Write-Host "  tenantId      $($acct.tenantId)"
 Write-Host "  appId         $appId"
 Write-Host "  keyVault.uri  $($vault.properties.vaultUri)"

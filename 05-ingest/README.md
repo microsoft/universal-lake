@@ -1,4 +1,4 @@
-# Stage 4: Ingest
+# Step 5: Ingest
 
 The ingesters pull from Graph, Azure, Dataverse and uploaded CSVs into **`dbo`** tables. These are the installer's notebooks, unchanged. This stage shows how to run them **one at a time**, see exactly what history each one fetches, and fix them one at a time.
 
@@ -6,7 +6,7 @@ The ingesters pull from Graph, Azure, Dataverse and uploaded CSVs into **`dbo`**
 
 | Way | How | Logged to `ops.*` | Use it when |
 |---|---|---|---|
-| **One orchestrator step** (recommended) | Open `07_Orchestrator`, set `STEPS = 'audit'` (or any step name below) and `RUN_MODE`, then **Run all** | yes: `run_log` and `backfill_ledger` | Normal manual runs. The arguments are the same ones the full run would pass. |
+| **One orchestrator step** (recommended) | Open `Lake_Orchestrator`, set `STEPS = 'audit'` (or any step name below) and `RUN_MODE`, then **Run all** | yes: `run_log` and `backfill_ledger` | Normal manual runs. The arguments are the same ones the full run would pass. |
 | **Open the notebook itself** | Open it, change its parameters cell, then **Run all** | no | Debugging: you see every cell's output and can stop half-way |
 
 Run the steps in the order below on a first load. The processor needs `audit` and `licensed_users`, and the orchestrator enforces that.
@@ -20,7 +20,7 @@ Use `DRY_RUN = True` in the orchestrator to print the plan, the arguments and th
 | 1 | `audit` | `Copilot_Audit_Log_Direct_Ingester` | core | `copilot_interactions_parsed` | **Backfill**: `BACKFILL_DAYS` (≤180). **Incremental**: since its last load plus a `LOOKBACK_DAYS` requery. | 2 h / 6 h |
 | 2 | `licensed_users` | `Copilot_Licensed_Users_Direct_Ingester` | core | `copilot_licensed_users` | Snapshot: Graph report period D7, overwrite | 15 / 30 min |
 | 3 | `agent365` | `Copilot_Agent365_Registry_Ingester` (falls back to `Copilot_Agent365_Lander` if it fails) | agent365 | `agents_365`, `agents_365_history`, `agents_365_detail_cache` | Snapshot plus history. Details are incremental, with a full refresh every 7 days. | 15 min |
-| 4 | `processor` | `Copilot_Audit_Log_Processor` | core | `copilot_interactions_curated` | All of `copilot_interactions_parsed` (see [stage 5](../05-process/README.md)) | 2 h / 3 h |
+| 4 | `processor` | `Copilot_Audit_Log_Processor` | core | `copilot_interactions_curated` | All of `copilot_interactions_parsed` (see [step 6](../06-process/README.md)) | 2 h / 3 h |
 | 5 | `upload_router` | `AnalyticsHub_Upload_Router` | core | `analytics_hub_upload_log`, and moves files | Every CSV in `Files/analytics_hub_uploads` | 30 min |
 | 6 | `org_data` | `Copilot_Org_Data_Direct_Ingester` | orgData | `copilot_org_data` (+ hierarchy) | Snapshot of every user, overwrite | 30 min / 1 h |
 | 7 | `m365_activity` | `Copilot_M365_Activity_Ingester` | m365Activity | `m365_activity_daily` | Incremental and self-managed: re-reads the last 4 days | 1 h / 2 h |
@@ -30,7 +30,7 @@ Use `DRY_RUN = True` in the orchestrator to print the plan, the arguments and th
 | 11 | `studio` | `Consumption_Ingest_Studio` | consumption | `studio_*` | Every file in `Files/landing/studio` | 30 min |
 | 12 | `viva` | `Consumption_Ingest_Viva` | consumption | `viva_*` | Every file in `Files/landing/viva` | 30 min |
 
-Steps 13 and later (promote, refresh, data check) are covered in [stage 5](../05-process/README.md), [stage 6](../06-semantic-model/README.md) and [stage 7](../07-orchestrate/README.md).
+Steps 13 and later (promote, refresh, data check) are covered in [step 6](../06-process/README.md), [step 7](../07-semantic-model/README.md) and [step 8](../08-orchestrate/README.md).
 
 **Workday CSV source only**: the orchestrator doesn't run `Copilot_Org_Data_Workday_Lander`. Run it by hand after you drop the extract in `Files/org_workday`, then run `org_data`.
 
@@ -77,8 +77,8 @@ FROM ops.backfill_ledger ORDER BY recorded_at DESC LIMIT 20;
    SELECT step, status, duration_s, error FROM ops.run_log
    WHERE run_id = '<run_id>' AND event = 'end' ORDER BY step_no;
    ```
-2. **401 or 403**: run `01_Validate_Credentials`. It names the missing permission.
+2. **401 or 403**: run `Lake_Validate_Credentials`. It names the missing permission.
 3. **Timeout**: re-run the step. Audit and transcripts resume. Snapshots simply reload.
-4. Re-run only that step: `07_Orchestrator` with `RUN_ID = '<run_id>'` and `RERUN_FAILED = True`. See [RERUNS.md](../07-orchestrate/RERUNS.md).
+4. Re-run only that step: `Lake_Orchestrator` with `RUN_ID = '<run_id>'` and `RERUN_FAILED = True`. See [RERUNS.md](../08-orchestrate/RERUNS.md).
 
-Next: [Stage 5: Process and promote](../05-process/README.md)
+Next: [Step 6: Process and promote](../06-process/README.md)

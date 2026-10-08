@@ -4,7 +4,7 @@ All of these work on the same Lakehouse. None of them drops data, except where a
 
 ## Which rerun?
 
-| Situation | Set in `07_Orchestrator` |
+| Situation | Set in `Lake_Orchestrator` |
 |---|---|
 | Some steps failed, and you want to retry only those | `RUN_ID='<that run>'`, `RERUN_FAILED=True`, **the same `RUN_MODE`** as the original run |
 | The audit backfill came back `paused` (time budget) | The same as above. Repeat until `audit` succeeds. Each pass resumes from `Files/_audit_staging`. |
@@ -26,7 +26,7 @@ SELECT run_id, run_mode, min(started_at) AS started FROM ops.run_log GROUP BY ru
 
 Opening a notebook and running it is always allowed. It isn't logged to `ops.*`. To keep the tables consistent, follow these rules:
 
-* After any change in `dbo`, **run `05_Promote_Medallion`**, because the models read `gold`, not `dbo`. Use `TABLES='x'` for just that table.
+* After any change in `dbo`, **run `Lake_Promote_Medallion`**, because the models read `gold`, not `dbo`. Use `TABLES='x'` for just that table.
 * After promote, refresh the model: run the orchestrator with `STEPS='refresh_universal'`, or refresh it in the workspace.
 * After an audit **backfill**, run the processor with **overwrite**, then promote, then refresh with `WRITE_MODE='overwrite'`. `RUN_MODE='backfill'` does all of that for you.
 
@@ -43,14 +43,14 @@ Opening a notebook and running it is always allowed. It isn't logged to `ops.*`.
 | `processor` | yes | `overwrite` rebuilds everything; `merge` upserts on `Id` |
 | `promote` | yes | Overwrites each layer from `dbo` |
 | `refresh_*` | yes | Refreshes the model again |
-| `06_Deploy_Models` | yes | Updates the same models and connection |
-| `02_Init_Lakehouse` | yes | Never drops anything. Blank values don't overwrite settings. |
+| `Lake_Deploy_Models` | yes | Updates the same models and connection |
+| `Lake_Init` | yes | Never drops anything. Blank values don't overwrite settings. |
 
 ## Failure → fix
 
 | Step / message | Likely cause | Fix |
 |---|---|---|
-| any: `401` / `403` / `Authorization_RequestDenied` | Permission or consent missing | Run `01_Validate_Credentials`, then fix what it lists ([stage 1](../01-app-registration/README.md)) |
+| any: `401` / `403` / `Authorization_RequestDenied` | Permission or consent missing | Run `Lake_Validate_Credentials`, then fix what it lists ([step 2](../02-permissions/README.md)) |
 | any: `Key Vault … Forbidden` | You (or the app) can't read the secret | Give the running identity **Key Vault Secrets User** |
 | `audit`: `Time budget of N min reached …` (`paused`) | A long backfill | `RERUN_FAILED=True` on the same `RUN_ID`, as many times as needed. On a large tenant, use `SCALE='large'`. |
 | `audit`: refuses, *unrecovered gap* | An older chunk failed for good | Run `RUN_MODE='backfill'` with `BACKFILL_DAYS` covering the gap |
@@ -58,10 +58,10 @@ Opening a notebook and running it is always allowed. It isn't logged to `ops.*`.
 | `licensed_users`: UPNs are 32-character hex strings, and nothing joins to org data | The reports setting conceals user names | Microsoft 365 admin center: **Settings > Org settings > Reports**, then clear *"Display concealed user, group, and site names"* |
 | `processor`: skipped, *dependency audit did not succeed* | Audit failed earlier in the run | Fix audit, then use `RERUN_FAILED` |
 | `promote`: *Required but not in gold* | The processor hasn't produced `copilot_interactions_curated` | Run `processor`, then `promote` |
-| `promote`: *gold_tables.json not found* | Models folder not uploaded | [stage 6](../06-semantic-model/README.md), step 2 |
-| `refresh_*`: SKIP, *no model_id* | Models not deployed | Run `06_Deploy_Models` |
+| `promote`: *gold_tables.json not found* | Models folder not uploaded | Upload `out/models` ([step 4.3](../04-import/README.md#43-upload-the-model-definitions)) |
+| `refresh_*`: SKIP, *no model_id* | Models not deployed | Run `Lake_Deploy_Models` |
 | `refresh_*` / 06: *credentials* or *data source* | Connection not bound, or the secret was rotated | Rerun 06 with `DEPLOY=False` |
-| `notebook.run`: *not found* | Notebook missing, or not under its exact name | Import it again ([stage 3](../03-build-and-import/README.md)) |
+| `notebook.run`: *not found* | Notebook missing, or not under its exact name | Import it again ([step 4](../04-import/README.md)) |
 | `agent365` failed and `agent365_lander` succeeded | Registry API unavailable. The CSV fallback filled `agents_365`. | No action needed. `RERUN_FAILED` will try the registry again. |
 | Timeout on any step | Large tenant | `SCALE='large'`, or rerun the step |
 
@@ -71,4 +71,4 @@ Only start over if you really need to. Reruns are almost always enough.
 
 1. Drop the data tables: `dbo.*`, `bronze.*`, `silver.*`, `gold.*`. Keep `ops.config`.
 2. Delete `Files/_audit_staging`.
-3. Run `07_Orchestrator` with `RUN_MODE='first_load'`.
+3. Run `Lake_Orchestrator` with `RUN_MODE='first_load'`.

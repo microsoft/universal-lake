@@ -1,4 +1,4 @@
-# Stage 6: Semantic models
+# Step 7: Semantic models
 
 The models and their relationships are built by **the installer's own model code**, pointed at the `gold` schema. Nothing is hand-written, so they match what the installer deploys.
 
@@ -22,11 +22,11 @@ This writes to `out/models/`:
 
 | File | What it is |
 |---|---|
-| `<key>/definition.json` | The Fabric item definition that `06_Deploy_Models` uploads |
+| `<key>/definition.json` | The Fabric item definition that `Lake_Deploy_Models` uploads |
 | `<key>/model.bim` | The same model as readable TMSL, to review or diff |
 | `<key>/relationships.txt` | Every relationship: `from[col] -> to[col]`, marked `(inactive)` where it applies |
 | `<key>/lakehouse_tables.txt` | The gold tables this model reads |
-| `gold_tables.json` | All of the above per model; `05_Promote_Medallion` uses it to decide what is gold |
+| `gold_tables.json` | All of the above per model; `Lake_Promote_Medallion` uses it to decide what is gold |
 | `SUMMARY.json` | Server, database, schema, modules and per-model counts. The source commit is in `out/SOURCE.lock.json`. |
 
 The server and database in the models come from `lakehouse.sqlEndpoint` and `lakehouse.name` in `config.json`, and the schema is `gold`. If you change either, rebuild. If `sqlEndpoint` is blank, the build warns you and the models carry a placeholder server.
@@ -37,9 +37,9 @@ Upload the whole `out/models` folder into **`Files/universal_lake/`**, so you ha
 
 ## 3. Promote first
 
-Gold must hold the tables before the refresh, so run [stage 5](../05-process/README.md) first. Otherwise the refresh fails with *"table … not found"*.
+Gold must hold the tables before the refresh, so run [step 6](../06-process/README.md) first. Otherwise the refresh fails with *"table … not found"*.
 
-## 4. Run `06_Deploy_Models`
+## 4. Run `Lake_Deploy_Models`
 
 For each model in `MODELS`:
 
@@ -65,7 +65,7 @@ The model ID is saved to `ops.config` as `model_id.<key>`. **The orchestrator's 
 | `REFRESH` | `True` | `False`: deploy only |
 | `REFRESH_TIMEOUT_MIN` | 60 | Raise this for a large first refresh |
 
-`spn` needs the app to have access to the workspace (stage 1) and the tenant setting *"Service principals can use Fabric APIs"*. **After you rotate the secret, rerun this notebook with `DEPLOY = False`** so the connection gets the new one.
+`spn` needs the app to be a Viewer of the workspace ([step 2.4](../02-permissions/README.md#follow-ups-for-both-options)) and the tenant setting *"Service principals can use Fabric APIs"*. **After you rotate the secret, rerun this notebook with `DEPLOY = False`** so the connection gets the new one.
 
 ## Later refreshes
 
@@ -88,4 +88,4 @@ WHERE step LIKE 'deploy:%' AND event = 'end' ORDER BY ended_at DESC LIMIT 10;
 SELECT key, value FROM ops.config WHERE key LIKE 'model_id.%';
 ```
 
-Next: [Stage 7: Orchestrate](../07-orchestrate/README.md)
+Next: [Step 8: Orchestrate](../08-orchestrate/README.md)

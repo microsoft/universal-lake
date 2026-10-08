@@ -4,7 +4,7 @@
 # Not run on its own. The repo's notebooks load it with `%run lake_ops`, so it must be in the same workspace
 # and the notebook calling it must have the Lakehouse attached as its default Lakehouse.
 #
-# Tables (all in the `ops` schema, created by 02_Init_Lakehouse):
+# Tables (all in the `ops` schema, created by Lake_Init):
 #
 # | Table | One row per | Use |
 # |---|---|---|
@@ -124,7 +124,7 @@ def _append(table, schema, rows):
 
 def cfg_all():
     if not table_exists(f'{OPS_SCHEMA}.config'):
-        raise RuntimeError('ops.config is missing. Run 02_Init_Lakehouse first.')
+        raise RuntimeError('ops.config is missing. Run Lake_Init first.')
     return {r['key']: r['value'] for r in spark.table(f'{OPS_SCHEMA}.config').collect()}
 
 
@@ -132,7 +132,7 @@ def cfg(key, default=None, required=False):
     value = cfg_all().get(key)
     if value in (None, ''):
         if required:
-            raise RuntimeError(f'ops.config has no "{key}". Set it in 02_Init_Lakehouse and run that notebook again.')
+            raise RuntimeError(f'ops.config has no "{key}". Set it in Lake_Init and run that notebook again.')
         return default
     return value
 

@@ -1,5 +1,5 @@
 # %% [markdown]
-# # 07 Orchestrator
+# # Orchestrator
 #
 # Runs the same steps, in the same order, as the installer's `CopilotAdoptionPipeline`, but one at a time from a
 # notebook, so every step is visible, logged and individually re-runnable.
@@ -15,12 +15,12 @@
 # | `backfill` | backfill `BACKFILL_DAYS` | overwrite | last `BACKFILL_DAYS` | overwrite | widening history or repairing gaps |
 # | `incremental` | since last load + `LOOKBACK_DAYS` | merge | last 14 days | merge | the daily run |
 #
-# Re-running: see `07-orchestrate/RERUNS.md`. In short: `RERUN_FAILED = True` re-runs only the steps of `RUN_ID`
+# Re-running: see `08-orchestrate/RERUNS.md`. In short: `RERUN_FAILED = True` re-runs only the steps of `RUN_ID`
 # that did not succeed; `START_FROM = '<step>'` skips everything before that step.
 
 # %% [parameters]
 RUN_MODE = 'incremental'       # 'first_load', 'backfill' or 'incremental'
-BACKFILL_DAYS = 0              # 0 = use backfill_days from ops.config (set by 02_Init_Lakehouse); max 180
+BACKFILL_DAYS = 0              # 0 = use backfill_days from ops.config (set by Lake_Init); max 180
 SCALE = ''                     # blank = ops.config scale; 'standard' or 'large'
 MODULES = ''                   # blank = ops.config modules
 STEPS = ''                     # comma-separated step names to run (blank = all applicable)
@@ -99,7 +99,7 @@ STEPS_ALL = [
     ('azure_ai',         'Consumption_Ingest_Azure_AI',            'consumption',     False, 1 * H, dict, ('azure_ai_consumption', 90)),
     ('studio',           'Consumption_Ingest_Studio',              'consumption',     False, 30 * 60, dict, ('studio_consumption', None)),
     ('viva',             'Consumption_Ingest_Viva',                'consumption',     False, 30 * 60, dict, ('viva_consumption', None)),
-    ('promote',          '05_Promote_Medallion',                   'core',            True,  1 * H, lambda: {'RUN_ID': RUN_ID}, None),
+    ('promote',          'Lake_Promote_Medallion',                   'core',            True,  1 * H, lambda: {'RUN_ID': RUN_ID}, None),
     ('refresh_universal','AnalyticsHub_Refresh_Model',             'core',            False, (5 if LARGE else 3) * H,
         lambda: model_args('universal', 'overwrite' if IS_BACKFILL else 'merge'), None),
     ('refresh_consumption', 'AnalyticsHub_Refresh_Model',          'consumption',     False, (5 if LARGE else 3) * H,
@@ -147,11 +147,11 @@ for i, (name, nb, module, critical, timeout, args, led) in enumerate(STEPS_ALL):
         reason = f'already succeeded in {RUN_ID}'
     plan.append((name, nb, module, critical, timeout, args, led, reason))
 
-# A refresh needs its model id, which 06_Deploy_Models saves.
+# A refresh needs its model id, which Lake_Deploy_Models saves.
 MODEL_KEY = {'refresh_universal': 'universal', 'refresh_consumption': 'consumption',
              'refresh_agent_evaluator': 'agentEvaluator'}
 plan = [(n, nb, m, c, t, a, l, r or ('' if n not in MODEL_KEY or cfg(f'model_id.{MODEL_KEY[n]}', '')
-                                       else f'no model_id.{MODEL_KEY[n]} in ops.config; run 06_Deploy_Models'))
+                                       else f'no model_id.{MODEL_KEY[n]} in ops.config; run Lake_Deploy_Models'))
         for (n, nb, m, c, t, a, l, r) in plan]
 
 now = utcnow()

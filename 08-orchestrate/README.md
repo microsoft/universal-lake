@@ -1,6 +1,6 @@
-# Stage 7: Orchestrate
+# Step 8: Orchestrate
 
-`07_Orchestrator` runs the same steps, in the same order and with the same arguments and timeouts, as the installer's `CopilotAdoptionPipeline`. The difference: each step is a separate `notebook.run`, so you get:
+`Lake_Orchestrator` runs the same steps, in the same order and with the same arguments and timeouts, as the installer's `CopilotAdoptionPipeline`. The difference: each step is a separate `notebook.run`, so you get:
 
 * **a plan first.** It prints every step, its arguments and the history window it will fetch. `DRY_RUN = True` stops there.
 * **a log per step.** It writes a start and an end row to `ops.run_log`, with status, duration, exit value and the full error.
@@ -9,7 +9,7 @@
 
 ## Import
 
-Import `07-orchestrate/07_Orchestrator.ipynb`, attach the Lakehouse, and make sure `lake_ops`, `05_Promote_Medallion` and every installer notebook are in the **same workspace** under their exact names. `notebook.run` finds them by name. See [stage 3](../03-build-and-import/README.md).
+You imported `Lake_Orchestrator` from `out/notebooks` in step 4, with the Lakehouse attached. Make sure `lake_ops`, `Lake_Promote_Medallion` and every installer notebook are in the **same workspace** under their exact names. `notebook.run` finds them by name. See [step 4](../04-import/README.md).
 
 ## Parameters
 
@@ -35,7 +35,7 @@ Import `07-orchestrate/07_Orchestrator.ipynb`, attach the Lakehouse, and make su
 | `backfill` | backfills `BACKFILL_DAYS` | overwrite | last `BACKFILL_DAYS` | overwrite | widening history, or repairing an audit gap |
 | `incremental` | since the last load, re-reading `LOOKBACK_DAYS` | merge | last 14 days | merge | the daily run |
 
-Snapshot sources (licensed users, org data, product feedback, Azure AI's 90 days, Studio and Viva uploads) reload the same way in every mode. M365 activity always manages its own incremental window. The full per-step detail is in [stage 4](../04-ingest/README.md).
+Snapshot sources (licensed users, org data, product feedback, Azure AI's 90 days, Studio and Viva uploads) reload the same way in every mode. M365 activity always manages its own incremental window. The full per-step detail is in [step 5](../05-ingest/README.md).
 
 ## The steps
 
@@ -65,8 +65,8 @@ Snapshot sources (licensed users, org data, product feedback, Azure AI's 90 days
 2. **First load.** Set `RUN_MODE='first_load'` and `DRY_RUN=False`.
    * If the audit step comes back **`paused`** (the time budget ran out), rerun with the printed `RUN_ID` and `RERUN_FAILED=True` until it succeeds. Each pass resumes from the staged windows.
    * The refresh steps are skipped until you've deployed the models.
-3. **Deploy the models.** Run `06_Deploy_Models` ([stage 6](../06-semantic-model/README.md)).
-4. **Daily.** Schedule `07_Orchestrator` with `RUN_MODE='incremental'`: open the notebook, then **Run > Schedule**, once a day. Schedules run the notebook with its saved default parameters, and `incremental` is the default.
+3. **Deploy the models.** Run `Lake_Deploy_Models` ([step 7](../07-semantic-model/README.md)).
+4. **Daily.** Schedule `Lake_Orchestrator` with `RUN_MODE='incremental'`: open the notebook, then **Run > Schedule**, once a day. Schedules run the notebook with its saved default parameters, and `incremental` is the default.
 5. **Widening history later.** Run `RUN_MODE='backfill'` with a larger `BACKFILL_DAYS`. Chunks that were already fetched are reused.
 
 > Don't run the orchestrator while a scheduled run is in progress. Two runs of the audit ingester share `Files/_audit_staging`.

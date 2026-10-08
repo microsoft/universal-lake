@@ -1,5 +1,5 @@
 # %% [markdown]
-# # 02 Initialise the Lakehouse
+# # Initialise the Lakehouse
 #
 # Attach the Lakehouse as this notebook's **default Lakehouse**, fill in the parameters, then **Run all**.
 #
@@ -14,10 +14,10 @@
 # | Schema | Holds | Written by |
 # |---|---|---|
 # | `dbo` | The ingesters' working tables, exactly as the installer writes them | Ingester and processor notebooks (unchanged) |
-# | `bronze` | Raw extracts: parsed audit records, raw transcripts, upload and load logs | 05_Promote_Medallion |
-# | `silver` | Cleaned dimensions and module outputs the models do not read directly | 05_Promote_Medallion |
-# | `gold` | Exactly the tables the semantic models read | 05_Promote_Medallion |
-# | `ops` | Run log, backfill ledger, promote log and settings | This notebook, 07_Orchestrator, 05 and 06 |
+# | `bronze` | Raw extracts: parsed audit records, raw transcripts, upload and load logs | Lake_Promote_Medallion |
+# | `silver` | Cleaned dimensions and module outputs the models do not read directly | Lake_Promote_Medallion |
+# | `gold` | Exactly the tables the semantic models read | Lake_Promote_Medallion |
+# | `ops` | Run log, backfill ledger, promote log and settings | Every `Lake_*` notebook |
 
 # %% [parameters]
 TENANT_ID = ''
@@ -28,7 +28,7 @@ SQL_ENDPOINT = ''                    # Lakehouse > SQL analytics endpoint > Sett
 SCALE = 'standard'                   # 'standard' or 'large' (more than ~20k Copilot users, or busy audit logs)
 BACKFILL_DAYS = 30                   # audit history the first load fetches (max 180)
 MODULES = 'core,orgData,m365Activity,agent365,productFeedback,consumption,agentEvaluator'
-MODEL_ID_UNIVERSAL = ''              # filled in by 06_Deploy_Models; set here only to reuse an existing model
+MODEL_ID_UNIVERSAL = ''              # filled in by Lake_Deploy_Models; set here only to reuse an existing model
 MODEL_ID_CONSUMPTION = ''
 MODEL_ID_AGENT_EVALUATOR = ''
 
@@ -70,7 +70,7 @@ for name in OPS_TABLES:
 # | `Files/landing/studio` | Consumption_Ingest_Studio | Copilot Studio credit exports |
 # | `Files/landing/viva` | Consumption_Ingest_Viva | Cowork / Viva credit exports |
 # | `Files/org_workday` | Workday lander | Workday org extract (only when org data comes from Workday) |
-# | `Files/universal_lake/models` | 05 and 06 | Upload the whole `out/models` folder from `npm run models` here (`gold_tables.json`, `<key>/definition.json`) |
+# | `Files/universal_lake/models` | Lake_Promote_Medallion, Lake_Deploy_Models | Upload the whole `out/models` folder from `npm run models` here (`gold_tables.json`, `<key>/definition.json`) |
 
 # %%
 FOLDERS = ['analytics_hub_uploads', 'agent365', 'product_feedback', 'landing/studio', 'landing/viva', 'org_workday',

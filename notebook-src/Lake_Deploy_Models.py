@@ -1,5 +1,5 @@
 # %% [markdown]
-# # 06 Deploy the semantic models
+# # Deploy the semantic models
 #
 # Deploys the models built on your PC by `npm run models`, which uses the installer's own model code and points it
 # at the **gold** schema. Then it connects each model to the Lakehouse, refreshes it and checks it holds data.
@@ -8,7 +8,7 @@
 #
 # 1. Upload `out/models/<key>/definition.json` for each model to `Files/universal_lake/models/<key>/definition.json`.
 #    `<key>` is `universal`, `consumption` or `agentEvaluator`.
-# 2. Run 05_Promote_Medallion so the gold tables exist. Otherwise the refresh fails on missing tables.
+# 2. Run Lake_Promote_Medallion so the gold tables exist. Otherwise the refresh fails on missing tables.
 #
 # For each model, in order:
 #
@@ -164,7 +164,7 @@ for i, key in enumerate(keys, 1):
         continue
     name = definition['displayName']
     bim = bim_of(definition)
-    step = log_start(run_id, f'deploy:{key}', '06_Deploy_Models', 'deploy' if DEPLOY else 'refresh',
+    step = log_start(run_id, f'deploy:{key}', 'Lake_Deploy_Models', 'deploy' if DEPLOY else 'refresh',
                      {'name': name, 'connection_mode': CONNECTION_MODE}, step_no=i)
     try:
         print(f'\n=== {name} ===')

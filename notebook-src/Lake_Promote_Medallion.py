@@ -1,5 +1,5 @@
 # %% [markdown]
-# # 05 Promote to bronze, silver and gold
+# # Promote to bronze, silver and gold
 #
 # The ingesters and the processor are the installer's own notebooks, unchanged, so they write to `dbo`. This notebook
 # copies each `dbo` table into **exactly one** medallion layer, so the semantic models can read `gold` and nothing else.
@@ -15,7 +15,7 @@
 # its last successful promote is skipped. Every table's result is written to `ops.table_layers`.
 
 # %% [parameters]
-RUN_ID = ''                          # set by 07_Orchestrator; blank makes a new one
+RUN_ID = ''                          # set by Lake_Orchestrator; blank makes a new one
 SOURCE_SCHEMA = 'dbo'
 GOLD_TABLES_FILE = '/lakehouse/default/Files/universal_lake/models/gold_tables.json'
 TABLES = ''                          # comma-separated subset; blank promotes every table in SOURCE_SCHEMA
@@ -90,7 +90,7 @@ for layer in ('bronze', 'silver', 'gold'):
 
 # %%
 results = []
-step = log_start(run_id, 'promote', '05_Promote_Medallion', 'dry_run' if DRY_RUN else 'promote',
+step = log_start(run_id, 'promote', 'Lake_Promote_Medallion', 'dry_run' if DRY_RUN else 'promote',
                  {'tables': TABLES or '*', 'skip_unchanged': SKIP_UNCHANGED})
 try:
     for table, layer in plan:

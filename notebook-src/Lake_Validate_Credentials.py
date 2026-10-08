@@ -1,5 +1,5 @@
 # %% [markdown]
-# # 01 Validate credentials
+# # Validate credentials
 #
 # Run this **before** any ingester. It proves, one check at a time, that the app registration can do what the
 # ingesters will ask of it, so a missing permission fails here with a clear message instead of an hour into a backfill.

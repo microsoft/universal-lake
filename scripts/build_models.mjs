@@ -1,5 +1,5 @@
 // Builds the three semantic model definitions exactly as the installer would, then points them at the
-// Lakehouse's gold schema instead of dbo. Nothing is deployed: 06_Deploy_Models.ipynb (or the UI) does that.
+// Lakehouse's gold schema instead of dbo. Nothing is deployed: Lake_Deploy_Models.ipynb (or the UI) does that.
 //
 //   node scripts/build_models.mjs [--config config.json] [--schema gold]
 //
@@ -87,7 +87,7 @@ for (const model of MODELS) {
   summary.push({ key: model.key, name: model.name, tables: bim.model.tables.length, relationships: relationships.length, lakehouseTables: reads.length, replaced, leftover });
 }
 writeFileSync(join(dir, 'SUMMARY.json'), JSON.stringify({ server, database, schema, modules, models: summary }, null, 2));
-// Uploaded with the rest of out/models to Files/universal_lake/models/; 05_Promote_Medallion uses it to
+// Uploaded with the rest of out/models to Files/universal_lake/models/; Lake_Promote_Medallion uses it to
 // promote exactly these tables to gold and report any a model needs but the ingest did not produce.
 writeFileSync(join(dir, 'gold_tables.json'), JSON.stringify(requiredTables, null, 2));
 

@@ -1,143 +1,132 @@
-# Universal Data Lake for Microsoft Copilot data
+# Universal Data Lake for Microsoft 365 and Copilot data
 
-Build **one Microsoft Fabric Lakehouse** that holds every Copilot and agent data source, organised as **bronze, silver and gold**, with a **semantic model** on top. You run it **one visible step at a time**, so that when something fails you know which step, which source, which time window, and how to re-run just that part.
+This repo walks you through building **one Microsoft Fabric Lakehouse** that holds your Microsoft 365 Copilot data, your agent data, and how people use the Microsoft 365 apps (Teams, Outlook, Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive, Viva Engage). The data lands in **bronze, silver and gold** layers, and **semantic models** sit on the gold layer, ready for Power BI reports, Copilot in Power BI, data agents or your own analysis.
 
-* **Proven extract code, pinned.** The ingester, processor and refresh notebooks and the semantic model definitions are generated from a **pinned commit** of an open-source Fabric installer (the *source repo*, see [prerequisites](00-prerequisites/README.md)) with `npm run all`. Nothing is re-implemented, and nothing changes until you move the pin.
-* **Medallion layout.** The installer's notebooks write to `dbo`, unchanged. A promote step copies every table into exactly one of `bronze`, `silver` or `gold`, and the semantic models read **`gold` only**.
-* **Traceable.** Every step writes a row to `ops.run_log`. Every history window (audit backfill, transcripts, snapshots) goes to `ops.backfill_ledger`, and every promoted table to `ops.table_layers`.
-* **Explicit backfills and reruns.** `RUN_MODE` (`first_load`, `backfill` or `incremental`) and the backfill days are printed as a plan before anything runs. You can re-run only the failed steps of a run, or start from any step.
+**What you get at the end:**
 
-## The idea in one picture: pull once, model once, share everywhere
+* a Lakehouse with `bronze`, `silver`, `gold` and `ops` schemas, filled with data from the APIs and exports you switch on;
+* semantic models on the `gold` tables, with relationships and measures already defined;
+* a daily refresh you can schedule, and a log of every step and every backfill window.
 
-Every Copilot data source lands in **one Lakehouse**, sits behind **one semantic model**, and is shared through **one Fabric app**. Each report reads the same tables, so nobody re-pulls the APIs for each new question, and there is one governed set of definitions instead of a PBIX per team. Every source except the core audit feed is optional: start small and turn extras on when you are ready.
+**What this repo doesn't do:** build reports or publish a Fabric app. A Fabric app (for example the ValueLens app) is a **separate deployment** that can point at this lake and its models. This repo stops at the lake and the semantic models.
+
+You do every step yourself, in the Fabric portal and with a few scripts on your PC, so when something fails you can see exactly which step, which data source and which date range, and re-run only that.
+
+## The idea: pull once, model once, use everywhere
+
+Every source lands in one Lakehouse and sits behind one set of models. Every report, app or agent reads the same tables, so nobody re-pulls the APIs for a new question. Only the Copilot audit feed is required; every other source is optional, and you can turn it on later.
 
 ```mermaid
 flowchart LR
-  subgraph S["1 · Your data sources"]
+  subgraph S["Data sources"]
     direction TB
-    s1[Purview audit log]
+    s1[Purview audit log<br/>Copilot and agent use]
+    s3[Microsoft 365 usage reports<br/>Teams, Outlook, Word, Excel,<br/>PowerPoint, SharePoint, OneDrive]
     s2[Entra ID<br/>people and org]
-    s3[Microsoft 365<br/>usage reports]
     s4[Agent 365 catalog]
     s5[Dataverse<br/>agent transcripts]
-    s6[Viva / PPAC / Azure<br/>credits and cost]
+    s6[Viva / Power Platform / Azure<br/>credits and cost]
   end
-  subgraph N["2 · Notebooks (stages 4-5)"]
+  subgraph N["Notebooks (steps 5-6)"]
     direction TB
     n1[Ingesters] --> n2[Processor]
   end
-  subgraph L["3 · One Lakehouse"]
+  subgraph L["One Lakehouse"]
     direction TB
     b[(bronze<br/>raw extracts)] --> sv[(silver<br/>cleaned, history)] --> g[(gold<br/>model tables)]
   end
-  subgraph M["4 · One model (stage 6)"]
-    m1[Semantic models<br/>same measures for everyone]
+  subgraph M["Semantic models (step 7)"]
+    m1[Relationships and measures<br/>on gold]
   end
-  subgraph A["5 · One Fabric app"]
-    a1[Adoption and value<br/>Agent quality<br/>Credits and cost<br/>Work patterns]
+  subgraph U["Separate: what reads it"]
+    direction TB
+    u1[Power BI reports]
+    u2[A Fabric app]
+    u3[Data agents, SQL, notebooks]
   end
-  S --> N --> L --> M --> A
+  S --> N --> L --> M -.-> U
 ```
 
-## Data sources at a glance
+## What you need in Fabric
 
-What each source holds, which notebook pulls it, the gold table it ends up in, and the permission that unlocks it. The module name is the key in `config.json` → `dataSources` and in `setup-app.ps1 -Modules`.
+| | Minimum | Notes |
+|---|---|---|
+| Capacity | **F2**, or a Fabric trial (60 days, F64-sized) | The notebooks run on any F SKU. Use **F64 or larger** above about 10,000 people, or if report viewers don't have Power BI Pro. Below F64, everyone who opens a report needs Pro or PPU. Details in [step 1](01-fabric/README.md#11-pick-a-capacity). |
+| Workspace | One, on that capacity | You need **Admin** or **Member** on it. |
+| Lakehouse | One, with **Lakehouse schemas** ticked | Schemas can't be turned on afterwards. |
+| Azure | A Key Vault, and rights to create an app registration | Holds the app's client secret. The notebooks read it at run time. |
+| Microsoft 365 | Audit logging on, and an admin who can grant consent | The full list is in [step 2](02-permissions/README.md). |
 
-| Source (portal) | What it holds | Notebook | Gold table | Access needed | Module |
-|---|---|---|---|---|---|
-| Copilot interactions (Purview audit) | Every Copilot prompt and agent run: user, app, time, resources touched | Audit ingester, then processor | `copilot_interactions_curated` | `AuditLogsQuery.Read.All` | `core` |
-| Licensed users (M365 admin center reports) | Who holds a Copilot licence, last activity per app | Licensed users ingester | `copilot_licensed_users` | `Reports.Read.All` | `core` |
-| Org data (Entra ID) | Department, job title, country, manager chain | Org data ingester | `copilot_org_data` | `User.Read.All` | `orgData` |
-| M365 app usage (6 Graph reports) | Daily Teams, Outlook, SharePoint, OneDrive, Viva Engage and app use per person | M365 activity ingester | `m365_activity_daily` | `Reports.Read.All` | `m365Activity` |
-| Agent 365 (agent registry) | Agents in the tenant: publisher, status, owners | Agent365 registry ingester | `agents_365` | `CopilotPackages.Read.All`, `Application.Read.All` | `agent365` |
-| Product feedback (M365 admin center) | Thumbs up / down and comments on Copilot | Product feedback ingester | `user_feedback` | CSV you upload; no API permission | `productFeedback` |
-| Copilot Studio transcripts (Dataverse) | Sessions, turns, errors, knowledge use per agent | Transcript parser | `agent_sessions`, `agent_turns`, … | App added as a Dataverse application user (Bot Transcript Viewer) | `agentEvaluator` |
-| Studio credits (Power Platform admin center) | Copilot Studio credits by environment, agent and user | Studio lander | `studio_*` | CSV export (Global or Billing Admin) | `studioCredits` |
-| Cowork credits (Viva Insights) | Copilot credits per person, spending policies | Viva consumption lander | `viva_credits_weekly`, … | CSV export (Viva Insights Analyst) | `coworkCredits` |
-| Azure AI cost (Cost Management, Monitor) | Daily AI spend and tokens | Azure AI ingester | `azure_ai_spend`, `azure_ai_tokens` | Cost Management Reader, Monitoring Reader | `azureAi` |
+## Steps
 
-Two settings trip up most first runs:
+Follow them in order. Each folder has a README with exact clicks, what you should see, and what usually goes wrong.
 
-* **Concealed user names.** If *M365 admin center → Settings → Org settings → Reports* conceals names, the usage reports return 32-character IDs instead of UPNs and nothing joins. Turn it off before the first run.
-* **Blank Entra fields.** An empty department or manager in Entra shows up as a blank in every org slicer.
-
-## The stages
-
-| # | Folder | You do | Where |
+| Step | Folder | You do | Where |
 |---|---|---|---|
-| 0 | [`00-prerequisites`](00-prerequisites/README.md) | Check roles, licences, tenant settings and tools | Admin portals |
-| 1 | [`01-app-registration`](01-app-registration/README.md) | Create the app, grant permissions, store its secret in Key Vault | `setup-app.ps1` (az CLI) |
-| 2 | [`02-lakehouse`](02-lakehouse/README.md) | Create a workspace and a **schema-enabled** Lakehouse, fill in `config.json` | Fabric portal |
-| 3 | [`03-build-and-import`](03-build-and-import/README.md) | `npm run all`, import `out/notebooks`, upload model files, run `02_Init_Lakehouse` and `01_Validate_Credentials` | Your PC, then Fabric |
-| 4 | [`04-ingest`](04-ingest/README.md) | Run the ingesters, first by hand and then from the orchestrator | Fabric notebooks |
-| 5 | [`05-process`](05-process/README.md) | Run the audit processor, then promote `dbo` to bronze, silver and gold | Fabric notebooks |
-| 6 | [`06-semantic-model`](06-semantic-model/README.md) | Create the models, bind their connection, refresh them, check row counts | `06_Deploy_Models` |
-| 7 | [`07-orchestrate`](07-orchestrate/README.md) | Run everything in order and schedule it; [re-run what failed](07-orchestrate/RERUNS.md) | `07_Orchestrator` |
+| 1 | [`01-fabric`](01-fabric/README.md) | Pick a capacity, create the workspace and a **schema-enabled** Lakehouse, note three IDs | Fabric portal |
+| 2 | [`02-permissions`](02-permissions/README.md) | Choose your data sources, set tenant settings, create the app registration, then **confirm every permission** with the checklist | Admin portals, `setup-app.ps1` |
+| 3 | [`03-configure`](03-configure/README.md) | Clone the code, fill in `config.json`, run `npm run all` to build the notebooks and model files | Your PC |
+| 4 | [`04-import`](04-import/README.md) | Import the notebooks, upload the model files and CSV exports, run `Lake_Init` and `Lake_Validate_Credentials` | Fabric |
+| 5 | [`05-ingest`](05-ingest/README.md) | Run the ingesters, one at a time the first time, with the backfill you choose | Fabric notebooks |
+| 6 | [`06-process`](06-process/README.md) | Run the audit processor, then promote the tables into bronze, silver and gold | Fabric notebooks |
+| 7 | [`07-semantic-model`](07-semantic-model/README.md) | Create the semantic models on gold, connect them, refresh them and check row counts | `Lake_Deploy_Models` |
+| 8 | [`08-orchestrate`](08-orchestrate/README.md) | Run everything in order from one notebook, schedule it, and [re-run only what failed](08-orchestrate/RERUNS.md) | `Lake_Orchestrator` |
 
 ```mermaid
 flowchart LR
   subgraph PC[Your PC]
-    A[setup-app.ps1<br/>app + consent + KV secret] --> B[npm run all<br/>pinned installer code]
+    A[Step 2<br/>setup-app.ps1<br/>app, consent, Key Vault secret] --> B[Step 3<br/>config.json<br/>npm run all]
   end
   subgraph Fabric
-    B -->|import out/notebooks<br/>upload out/models| C[02_Init_Lakehouse<br/>schemas + ops tables]
-    C --> D[01_Validate_Credentials]
-    D --> E[Ingesters -> dbo]
-    E --> F[Audit processor -> dbo]
-    F --> G[05_Promote_Medallion<br/>dbo -> bronze / silver / gold]
-    G --> H[06_Deploy_Models<br/>models on gold]
-    H --> I[Refresh + Data check]
-    O[07_Orchestrator] -.->|"runs E to I, logs to ops tables"| E
+    W[Step 1<br/>workspace + Lakehouse] --> C
+    B -->|"Step 4: import out/notebooks,<br/>upload out/models"| C[Lake_Init<br/>schemas + ops tables]
+    C --> D[Lake_Validate_Credentials]
+    D --> E[Step 5<br/>ingesters]
+    E --> F[Step 6<br/>processor, then promote<br/>to bronze / silver / gold]
+    F --> H[Step 7<br/>semantic models on gold]
+    O[Step 8<br/>Lake_Orchestrator] -.->|runs 5 to 7 daily| E
   end
 ```
 
-## Quick start
+### Backfills and re-runs
 
-```powershell
-git clone <this-repo-url> UniversalLake
-git clone https://github.com/microsoft/ValueLens-for-Microsoft-Copilot <source-repo-path>   # the source repo: notebook and model code
-cd UniversalLake
-copy config.template.json config.json        # fill it in as you go through stages 1 and 2
-./01-app-registration/setup-app.ps1 -KeyVaultName <vault> -Modules core,orgData,m365Activity
-npm run all                                   # check pin -> sync notebooks -> build models -> build notebooks
-```
+The first load pulls history: by default 30 days of the audit log (up to 180), plus whatever history each other source offers. After that, each daily run picks up where the last one stopped. `Lake_Orchestrator` prints the plan (which steps, which dates) before it runs anything, records every date window it loaded in `ops.backfill_ledger`, and can re-run only the steps that failed. See [step 5](05-ingest/README.md) and [re-runs](08-orchestrate/RERUNS.md).
 
-Then, in Fabric:
+## Data sources
 
-1. Import every `.ipynb` in `out/notebooks`.
-2. Upload the `out/models` folder into `Files/universal_lake/` (you get `Files/universal_lake/models/`).
-3. Run `02_Init_Lakehouse`, then `01_Validate_Credentials`.
-4. Run `07_Orchestrator` with `RUN_MODE = 'first_load'` and `DRY_RUN = True`, read the plan, then set `DRY_RUN = False`.
-5. Run `06_Deploy_Models` once.
-6. Run `07_Orchestrator` again with `STEPS = 'refresh_universal,refresh_consumption,refresh_agent_evaluator,data_check'`.
+The module name is what you set in `config.json` → `dataSources` and pass to `setup-app.ps1 -Modules`.
 
-On every later day, run `07_Orchestrator` with `RUN_MODE = 'incremental'`, which is the default. You can schedule it.
+| Source | What it holds | Gold table | Access needed | Module |
+|---|---|---|---|---|
+| Copilot interactions (Purview audit log) | Every Copilot prompt and agent run: user, app, time, files and sites touched | `copilot_interactions_curated` | `AuditLogsQuery.Read.All` | `core` (required) |
+| Licensed users (Microsoft 365 usage reports) | Who holds a Copilot licence, last activity per app | `copilot_licensed_users` | `Reports.Read.All` | `core` (required) |
+| Org data (Entra ID) | Department, job title, country, manager chain | `copilot_org_data` | `User.Read.All` | `orgData` |
+| Microsoft 365 app usage (6 usage reports) | Daily activity per person in Teams, Outlook and email, Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive and Viva Engage | `m365_activity_daily` | `Reports.Read.All` | `m365Activity` |
+| Agent 365 (agent registry) | Agents in the tenant: publisher, status, owners | `agents_365` | `CopilotPackages.Read.All`, `Application.Read.All` (or a CSV export) | `agent365` |
+| Product feedback | Thumbs up and down, and comments on Copilot | `user_feedback` | CSV export, no API permission | `productFeedback` |
+| Copilot Studio transcripts (Dataverse) | Sessions, turns, errors and knowledge use per agent | `agent_sessions`, `agent_turns`, … | App added as a Dataverse application user | `agentEvaluator` |
+| Copilot Studio credits (Power Platform admin center) | Credits by environment, agent and user | `studio_*` | CSV export | `studioCredits` |
+| Copilot credits (Viva Insights) | Credits per person, spending policies | `viva_credits_weekly`, … | CSV export | `coworkCredits` |
+| Azure AI cost (Cost Management, Monitor) | Daily AI spend and tokens | `azure_ai_spend`, `azure_ai_tokens` | Cost Management Reader, Monitoring Reader | `azureAi` |
 
-## How it maps to the installer
+Two settings cause most bad first runs:
 
-| Installer step | Here |
-|---|---|
-| Sign-in, app registration, Graph consent, secret to Key Vault | `setup-app.ps1`, checked by `01_Validate_Credentials` |
-| Create workspace and Lakehouse | Fabric portal (stage 2), checked by `02_Init_Lakehouse` |
-| Upload notebooks with parameters filled in | `npm run sync` (installer `transform/notebooks.js`), then import |
-| Create the semantic models and point them at the Lakehouse | `npm run models` (installer `transform/model.js`, schema `dbo` replaced by `gold`), then `06_Deploy_Models` |
-| SQL connection and binding | `06_Deploy_Models` (`CONNECTION_MODE = 'spn'`) |
-| `CopilotAdoptionPipeline` | `07_Orchestrator`: the same activities, order, timeouts and scale profiles, run in sequence |
-| First run as a backfill | `RUN_MODE = 'first_load'` |
+* **Concealed user names.** If *Microsoft 365 admin center → Settings → Org settings → Reports* hides names, the usage reports return random IDs instead of user names, and nothing joins. Turn it off before the first run ([step 2.3](02-permissions/README.md#23-tenant-settings)).
+* **Blank Entra fields.** An empty department or manager in Entra ID shows up as a blank in every org slicer.
 
 ## What is in the Lakehouse afterwards
 
 | Schema | Contents |
 |---|---|
-| `dbo` | The installer notebooks' working tables. Leave them alone: incremental loads read their own previous output from here. |
+| `dbo` | The ingesters' working tables. Leave them alone: each daily load reads its own previous output from here. |
 | `bronze` | Raw extracts and logs, such as `copilot_interactions_parsed`, `*_raw`, upload and load logs |
 | `silver` | Cleaned intermediate and history tables that no model reads |
-| `gold` | Exactly the tables the semantic models read (`out/models/gold_tables.json`) |
-| `ops` | `config`, `run_log`, `backfill_ledger`, `table_layers` |
+| `gold` | Exactly the tables the semantic models read |
+| `ops` | `config`, `run_log` (one row per step per run), `backfill_ledger` (every date window loaded), `table_layers` (which layer each table went to) |
 
 ### How the gold tables join
 
-The main model is a star. Copilot interactions and M365 activity are the two fact tables, and they share the person and date dimensions. The person key everywhere is the lower-cased UPN.
+The main model is a star. Copilot interactions and Microsoft 365 activity are the two fact tables, and they share the person and date dimensions. The person key everywhere is the lower-cased user principal name (UPN).
 
 ```mermaid
 flowchart LR
@@ -166,19 +155,20 @@ flowchart LR
 Things to know when a number looks wrong:
 
 * **Guests and service accounts** have no org row, so they show as unmapped.
-* **Licences are a current snapshot.** They are not kept as history, so licence trends need a daily snapshot.
+* **Licences are a current snapshot**, not history, so licence trends need a daily snapshot.
 * **Agent IDs in the audit log don't match the catalog directly.** The processor builds `Agent_LinkID` by trying the Entra ID, then the title ID, then the agent name.
-* **There is no relationship between the two facts.** DAX bridges them on person and date.
+* **There is no relationship between the two facts.** Measures bridge them on person and date.
 
-## Updating the source code
+## Where the notebook code comes from
 
-1. Pull the source repo clone.
-2. Set `pinnedCommit` in `config.json` to the new commit, then run `npm run all`.
-   * `check` confirms the clone is at the pin.
-   * `sync` lists which notebooks changed since the last sync (compared with `out/SOURCE.lock.json`).
-   * `models` fails loudly if a model template changed shape.
-3. Re-import the changed notebooks and re-upload `out/models`.
-4. Run `06_Deploy_Models` (it updates the models in place) and then `07_Orchestrator`.
+The ingesters, processor and model definitions aren't written from scratch here. `npm run all` (step 3) copies them from a fixed commit of the open-source [ValueLens for Microsoft Copilot](https://github.com/microsoft/ValueLens-for-Microsoft-Copilot) Fabric installer, so the extract logic is the same tested code. This repo adds the notebooks that set up the Lakehouse, check credentials, sort tables into layers, deploy the models and run everything in order (the `Lake_*` notebooks).
+
+To take a newer version of that code:
+
+1. Pull your clone of the source repo.
+2. Set `pinnedCommit` in `config.json` to the new commit, then run `npm run all`. It tells you which notebooks changed, and stops if a model definition changed shape.
+3. Re-import the changed notebooks and re-upload `out/models` ([step 4](04-import/README.md#re-building-later)).
+4. Run `Lake_Deploy_Models` (it updates the models in place) and then `Lake_Orchestrator`.
 
 ## Keeping IDs, secrets and personal details out of the repo
 
@@ -186,7 +176,7 @@ Your tenant ID, client ID, workspace and Lakehouse IDs belong only in `config.js
 
 * a GUID (tenant, client, workspace or object ID), except public IDs such as Microsoft Graph's
 * a client secret, password, storage key, SAS signature, private key, JWT or GitHub token
-* a personal path (`C:\Users\<name>`, `/home/<name>`), an email address, a personal OneDrive/SharePoint link or a tenant `*.onmicrosoft.com` domain
+* a personal path (`C:\Users\<name>`, `/home/<name>`), an email address, a personal OneDrive or SharePoint link, or a tenant `*.onmicrosoft.com` domain
 * a notebook with saved outputs or a Lakehouse binding
 * any term you list in `.scan-blocklist`, such as your alias or tenant name (one per line; this file is git-ignored)
 
@@ -202,11 +192,11 @@ The `sensitive-content-scan` GitHub Actions workflow runs the same check on ever
 ## Repository layout
 
 ```
-config.template.json   copy to config.json (git-ignored); no secrets in it
-scripts/               check_source, sync_notebooks, build_models (Node, import the source repo's installer);
-                       build_ipynb (Python); scan_sensitive (secret and personal-data check)
-.githooks/, .github/   pre-commit hook and CI workflow that run scan_sensitive
-notebook-src/          readable sources of this repo's notebooks (# %% cells) -> built into the stage folders
-0x-*/                  one folder per stage: README plus that stage's notebook or script
-out/                   generated, git-ignored: notebooks to import, model definitions, SOURCE.lock.json
+01-fabric/ ... 08-orchestrate/   one folder per step: README plus that step's script or notebook
+config.template.json             copy to config.json (git-ignored); no secrets in it
+scripts/                         build scripts (check_source, sync_notebooks, build_models, build_ipynb)
+                                 and scan_sensitive
+notebook-src/                    readable sources of the Lake_* notebooks, built into the step folders
+.githooks/, .github/             pre-commit hook and CI workflow that run scan_sensitive
+out/                             generated, git-ignored: notebooks to import, model files, SOURCE.lock.json
 ```
