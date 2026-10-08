@@ -20,6 +20,11 @@ export function loadUserConfig() {
   if (!cfg.sourceRepo || !existsSync(join(cfg.sourceRepo, '1. Fabric', 'installer', 'src', 'catalog.js'))) {
     throw new Error(`sourceRepo (${cfg.sourceRepo}) is not a clone of the source repo. Set it in config.json or the SOURCE_REPO env var.`);
   }
+  // The installer calls the Copilot interactions module 'core'.
+  if (cfg.dataSources && 'copilotInteractions' in cfg.dataSources) {
+    cfg.dataSources.core = cfg.dataSources.copilotInteractions;
+    delete cfg.dataSources.copilotInteractions;
+  }
   return { file, cfg };
 }
 

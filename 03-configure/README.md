@@ -48,7 +48,7 @@ Replace every `<...>` value.
 
 | Source | Allowed | Notes |
 |---|---|---|
-| `core`, `orgData` | `api` | Always on |
+| `copilotInteractions`, `orgData` | `api` | Always on |
 | `m365Activity` | `api`, `skip` | |
 | `agent365` | `api`, `csv`, `skip` | `csv` if you lack Agent 365 or the Graph permissions |
 | `workday` | `csv`, `skip` | Only if org data comes from a Workday export |

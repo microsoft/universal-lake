@@ -16,11 +16,11 @@ Set `DRY_RUN = True` first if you want to see the plan and date ranges without r
 
 | # | `STEPS` name | What it loads | History | Module |
 |---|---|---|---|---|
-| 1 | `audit` | Every Copilot prompt and agent run | **First load / backfill**: last `backfillDays`. **Daily**: since the last load, re-reading a few days. | core |
-| 2 | `licensed_users` | Who has a Copilot licence | Latest snapshot | core |
+| 1 | `audit` | Every Copilot prompt and agent run | **First load / backfill**: last `backfillDays`. **Daily**: since the last load, re-reading a few days. | copilotInteractions |
+| 2 | `licensed_users` | Who has a Copilot licence | Latest snapshot | copilotInteractions |
 | 3 | `agent365` | Agent registry (CSV lander if the API fails) | Latest snapshot + history | agent365 |
-| 4 | `processor` | Builds the curated fact table (step 6) | All loaded audit data | core |
-| 5 | `upload_router` | Moves CSVs from `Files/analytics_hub_uploads` | Every file there | core |
+| 4 | `processor` | Builds the curated fact table (step 6) | All loaded audit data | copilotInteractions |
+| 5 | `upload_router` | Moves CSVs from `Files/analytics_hub_uploads` | Every file there | copilotInteractions |
 | 6 | `org_data` | Department, title, country, manager | Latest snapshot | orgData |
 | 7 | `m365_activity` | Daily Teams, Outlook, Word, Excel… use | Last 4 days, merged | m365Activity |
 | 8 | `product_feedback` | Copilot feedback | Every uploaded export | productFeedback |

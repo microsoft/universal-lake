@@ -48,7 +48,8 @@ BACKFILL_DAYS = int(BACKFILL_DAYS or cfg('backfill_days', 30))
 assert 1 <= BACKFILL_DAYS <= 180, 'BACKFILL_DAYS must be 1..180 (the audit log keeps 180 days)'
 SCALE = (SCALE or cfg('scale', 'standard')).strip().lower()
 assert SCALE in ('standard', 'large'), f'unknown SCALE {SCALE!r}'
-MODULES = {m.strip() for m in (MODULES or cfg('modules', 'core')).split(',') if m.strip()} | {'core'}
+MODULES = {'copilotInteractions' if m.strip() == 'core' else m.strip()
+           for m in (MODULES or cfg('modules', 'copilotInteractions')).split(',') if m.strip()} | {'copilotInteractions'}
 WORKSPACE_ID = cfg('workspace_id', required=True)
 
 if RERUN_FAILED:
@@ -84,13 +85,13 @@ TRANSCRIPT_DAYS = BACKFILL_DAYS if IS_BACKFILL else 14
 
 # name, notebook, module, critical, timeout_s, args (callable), ledger (source, days) or None
 STEPS_ALL = [
-    ('audit',            'Copilot_Audit_Log_Direct_Ingester',      'core',            True,  (6 if LARGE else 2) * H, audit_args,
+    ('audit',            'Copilot_Audit_Log_Direct_Ingester',      'copilotInteractions',            True,  (6 if LARGE else 2) * H, audit_args,
         ('audit_log', BACKFILL_DAYS if IS_BACKFILL else None)),
-    ('licensed_users',   'Copilot_Licensed_Users_Direct_Ingester', 'core',            True,  (30 if LARGE else 15) * 60, dict, ('licensed_users', 7)),
+    ('licensed_users',   'Copilot_Licensed_Users_Direct_Ingester', 'copilotInteractions',            True,  (30 if LARGE else 15) * 60, dict, ('licensed_users', 7)),
     ('agent365',         'Copilot_Agent365_Registry_Ingester',     'agent365',        False, 15 * 60, dict, ('agent365_registry', None)),
-    ('processor',        'Copilot_Audit_Log_Processor',            'core',            True,  (3 if LARGE else 2) * H,
+    ('processor',        'Copilot_Audit_Log_Processor',            'copilotInteractions',            True,  (3 if LARGE else 2) * H,
         lambda: {'WRITE_MODE': 'overwrite' if IS_BACKFILL else 'merge'}, None),
-    ('upload_router',    'AnalyticsHub_Upload_Router',             'core',            False, 30 * 60, dict, None),
+    ('upload_router',    'AnalyticsHub_Upload_Router',             'copilotInteractions',            False, 30 * 60, dict, None),
     ('org_data',         'Copilot_Org_Data_Direct_Ingester',       'orgData',         False, (1 if LARGE else 0.5) * H, dict, ('org_data', None)),
     ('m365_activity',    'Copilot_M365_Activity_Ingester',         'm365Activity',    False, (2 if LARGE else 1) * H, dict, ('m365_activity', None)),
     ('product_feedback', 'Copilot_ProductFeedback_Ingester',       'productFeedback', False, 30 * 60, dict, ('product_feedback', None)),
@@ -99,14 +100,14 @@ STEPS_ALL = [
     ('azure_ai',         'Consumption_Ingest_Azure_AI',            'consumption',     False, 1 * H, dict, ('azure_ai_consumption', 90)),
     ('studio',           'Consumption_Ingest_Studio',              'consumption',     False, 30 * 60, dict, ('studio_consumption', None)),
     ('viva',             'Consumption_Ingest_Viva',                'consumption',     False, 30 * 60, dict, ('viva_consumption', None)),
-    ('promote',          'Lake_Promote_Medallion',                   'core',            True,  1 * H, lambda: {'RUN_ID': RUN_ID}, None),
-    ('refresh_universal','AnalyticsHub_Refresh_Model',             'core',            False, (5 if LARGE else 3) * H,
+    ('promote',          'Lake_Promote_Medallion',                   'copilotInteractions',            True,  1 * H, lambda: {'RUN_ID': RUN_ID}, None),
+    ('refresh_universal','AnalyticsHub_Refresh_Model',             'copilotInteractions',            False, (5 if LARGE else 3) * H,
         lambda: model_args('universal', 'overwrite' if IS_BACKFILL else 'merge'), None),
     ('refresh_consumption', 'AnalyticsHub_Refresh_Model',          'consumption',     False, (5 if LARGE else 3) * H,
         lambda: model_args('consumption', 'merge'), None),
     ('refresh_agent_evaluator', 'AnalyticsHub_Refresh_Model',      'agentEvaluator',  False, (5 if LARGE else 3) * H,
         lambda: model_args('agentEvaluator', 'merge'), None),
-    ('data_check',       'AnalyticsHub_Data_Check',                'core',            False, 30 * 60, dict, None),
+    ('data_check',       'AnalyticsHub_Data_Check',                'copilotInteractions',            False, 30 * 60, dict, None),
 ]
 NAMES = [s[0] for s in STEPS_ALL]
 

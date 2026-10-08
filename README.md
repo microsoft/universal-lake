@@ -49,11 +49,11 @@ Do them in order. Each folder's README has the exact clicks.
 
 ## Data sources
 
-Only `core` is required. Turn the others on in `config.json` (step 3); you can add them later.
+Only `copilotInteractions` is required. Turn the others on in `config.json` (step 3); you can add them later.
 
 | Module | Data | Gold table(s) | Needs |
 |---|---|---|---|
-| `core` | Every Copilot prompt and agent run (Purview audit log); who has a Copilot licence | `copilot_interactions_curated`, `copilot_licensed_users` | Graph `AuditLogsQuery.Read.All`, `Reports.Read.All` |
+| `copilotInteractions` | Every Copilot prompt and agent run (Purview audit log); who has a Copilot licence | `copilot_interactions_curated`, `copilot_licensed_users` | Graph `AuditLogsQuery.Read.All`, `Reports.Read.All` |
 | `orgData` | Department, job title, country, manager (Entra ID) | `copilot_org_data` | Graph `User.Read.All` |
 | `m365Activity` | Daily use of Teams, Outlook, Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive, Viva Engage | `m365_activity_daily` | Graph `Reports.Read.All` |
 | `agent365` | Agents in the tenant: publisher, status, owners | `agents_365` | Graph `CopilotPackages.Read.All`, `Application.Read.All`, or a CSV export |

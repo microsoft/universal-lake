@@ -22,7 +22,7 @@ CLIENT_ID = ''
 KEY_VAULT_URI = ''              # https://<vault>.vault.azure.net/  (recommended)
 SECRET_NAME = 'universal-lake-client-secret'
 CLIENT_SECRET = ''              # NOT recommended: only when you have no Key Vault. Leave blank to use Key Vault.
-MODULES = 'core,orgData,m365Activity,agent365,productFeedback,consumption,agentEvaluator'
+MODULES = 'copilotInteractions,orgData,m365Activity,agent365,productFeedback,consumption,agentEvaluator'
 AGENT365_SOURCE = 'api'         # 'api' needs Graph permissions; 'csv' does not
 AZURE_SUBSCRIPTION_IDS = ''     # comma-separated; empty skips the Azure checks
 DATAVERSE_URLS = ''             # comma-separated, e.g. https://contoso.crm.dynamics.com
@@ -33,7 +33,7 @@ import base64
 import json
 import requests
 
-modules = {m.strip() for m in MODULES.split(',') if m.strip()}
+modules = {'copilotInteractions' if m.strip() == 'core' else m.strip() for m in MODULES.split(',') if m.strip()}
 results = []
 
 
@@ -95,7 +95,7 @@ if secret:
 
 # %%
 REQUIRED = {
-    'core': ['AuditLogsQuery.Read.All', 'Reports.Read.All'],
+    'copilotInteractions': ['AuditLogsQuery.Read.All', 'Reports.Read.All'],
     'orgData': ['User.Read.All'],
     'm365Activity': ['Reports.Read.All'],
     'agent365': ['CopilotPackages.Read.All', 'Application.Read.All', 'User.Read.All'] if AGENT365_SOURCE == 'api' else [],
@@ -104,7 +104,7 @@ if graph:
     roles = set(claims(graph).get('roles', []))
     print('Consented roles:', ', '.join(sorted(roles)) or '(none)')
     for module, needed in REQUIRED.items():
-        if module in modules or module == 'core':
+        if module in modules or module == 'copilotInteractions':
             missing = [p for p in needed if p not in roles]
             check(f'Graph permissions for {module}', not missing, 'missing ' + ', '.join(missing) if missing else ', '.join(needed))
 

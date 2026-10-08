@@ -50,6 +50,7 @@ def prefill_values(cfg):
     modules = json.loads(lock.read_text(encoding="utf-8")).get("modules", []) if lock.exists() else []
     if isinstance(modules, dict):
         modules = ["core"] + [k for k, on in modules.items() if on and k != "core"]
+    modules = ["copilotInteractions" if m == "core" else m for m in modules]
     inline = inline_secret(cfg)
     values = {
         "TENANT_ID": cfg.get("tenantId"),

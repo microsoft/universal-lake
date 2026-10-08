@@ -6,11 +6,11 @@ Most failures later are a missing setting from this page, so **don't skip the ch
 
 ## 2.1 Pick your data sources
 
-`core` is required. Add others now or later; only grant what you pick.
+`copilotInteractions` is required. Add others now or later; only grant what you pick.
 
 | Module | Graph application permissions | Other access |
 |---|---|---|
-| `core` | `AuditLogsQuery.Read.All`, `Reports.Read.All` | |
+| `copilotInteractions` | `AuditLogsQuery.Read.All`, `Reports.Read.All` | |
 | `orgData` | `User.Read.All` | |
 | `m365Activity` | `Reports.Read.All` | |
 | `agent365` | `CopilotPackages.Read.All`, `Application.Read.All`, `User.Read.All` | or use a CSV export instead |
@@ -88,7 +88,7 @@ If you have the Azure CLI and a Key Vault you can write to, `setup-app.ps1` regi
 
 ```powershell
 az login --tenant <tenant-id>
-./02-permissions/setup-app.ps1 -KeyVaultName <vault> -Modules core,orgData,m365Activity
+./02-permissions/setup-app.ps1 -KeyVaultName <vault> -Modules copilotInteractions,orgData,m365Activity
 ```
 
 Other parameters: `-AppName`, `-SecretName`, `-SecretYears`, `-AzureSubscriptionIds`, `-SkipConsent` (prints a consent link for an admin), `-RotateSecret`. You still do the workspace Viewer and Dataverse steps by hand.

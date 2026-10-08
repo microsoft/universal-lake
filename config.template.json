@@ -22,7 +22,7 @@
   "backfillDays": 30,
 
   "dataSources": {
-    "core": "api",
+    "copilotInteractions": "api",
     "orgData": "api",
     "workday": "skip",
     "m365Activity": "api",

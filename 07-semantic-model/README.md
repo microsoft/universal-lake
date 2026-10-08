@@ -4,7 +4,7 @@
 
 | Model | Display name | Tables | Relationships | Module |
 |---|---|---|---|---|
-| `universal` | Universal Lake Model | 20 | 10 | core |
+| `universal` | Universal Lake Model | 20 | 10 | copilotInteractions |
 | `consumption` | Analytics Hub Consumption Model | 37 | 16 | consumption |
 | `agentEvaluator` | Analytics Hub Agent Evaluator Model | 43 | 23 | agentEvaluator |
 

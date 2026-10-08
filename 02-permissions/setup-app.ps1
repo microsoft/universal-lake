@@ -11,8 +11,8 @@
   and who can set secrets in the Key Vault.
 
 .EXAMPLE
-  ./setup-app.ps1 -KeyVaultName kv-universal-lake -Modules core,orgData,m365Activity
-  ./setup-app.ps1 -KeyVaultName kv-universal-lake -Modules core,orgData,consumption -AzureSubscriptionIds <sub-guid>
+  ./setup-app.ps1 -KeyVaultName kv-universal-lake -Modules copilotInteractions,orgData,m365Activity
+  ./setup-app.ps1 -KeyVaultName kv-universal-lake -Modules copilotInteractions,orgData,consumption -AzureSubscriptionIds <sub-guid>
   ./setup-app.ps1 -KeyVaultName kv-universal-lake -WhatIf      # print the plan only
 #>
 [CmdletBinding(SupportsShouldProcess)]
@@ -20,7 +20,7 @@ param(
   [Parameter(Mandatory)] [string] $KeyVaultName,
   [string]   $AppName = 'Universal Data Lake',
   [string]   $SecretName = 'universal-lake-client-secret',
-  [string[]] $Modules = @('core', 'orgData', 'm365Activity'),
+  [string[]] $Modules = @('copilotInteractions', 'orgData', 'm365Activity'),
   [int]      $SecretYears = 1,
   [string[]] $AzureSubscriptionIds = @(),
   [switch]   $SkipConsent,
@@ -31,7 +31,7 @@ $GRAPH = '00000003-0000-0000-c000-000000000000'
 
 # Same map as the installer's catalog.js (module -> Graph application permissions).
 $PERMS = @{
-  core            = @('AuditLogsQuery.Read.All', 'Reports.Read.All')
+  copilotInteractions = @('AuditLogsQuery.Read.All', 'Reports.Read.All')
   orgData         = @('User.Read.All')
   m365Activity    = @('Reports.Read.All')
   agent365        = @('CopilotPackages.Read.All', 'Application.Read.All', 'User.Read.All')
@@ -39,7 +39,7 @@ $PERMS = @{
   consumption     = @()
   agentEvaluator  = @()
 }
-$Modules = @('core') + $Modules | Select-Object -Unique
+$Modules = @('copilotInteractions') + ($Modules | ForEach-Object { if ($_ -eq 'core') { 'copilotInteractions' } else { $_ } }) | Select-Object -Unique
 foreach ($m in $Modules) { if (-not $PERMS.ContainsKey($m)) { throw "Unknown module '$m'. Known: $($PERMS.Keys -join ', ')" } }
 $needed = $Modules | ForEach-Object { $PERMS[$_] } | Select-Object -Unique
 
@@ -130,4 +130,4 @@ Write-Host "  secretName    $SecretName"
 Write-Host "`nStill to do by hand (see README.md):"
 Write-Host "  - Everyone who runs the notebooks needs 'Key Vault Secrets User' on $KeyVaultName (or a get/list access policy)."
 if ($Modules -contains 'agentEvaluator') { Write-Host "  - Agent Evaluator: add $appId as an application user in each Dataverse environment with the 'Bot Transcript Viewer' role." }
-if ($Modules -contains 'm365Activity' -or $Modules -contains 'core') { Write-Host "  - M365 admin center > Settings > Org settings > Reports: turn OFF 'Display concealed user names' or usage reports are anonymised." }
+if ($Modules -contains 'm365Activity' -or $Modules -contains 'copilotInteractions') { Write-Host "  - M365 admin center > Settings > Org settings > Reports: turn OFF 'Display concealed user names' or usage reports are anonymised." }
