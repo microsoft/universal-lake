@@ -44,8 +44,8 @@
     "agent365": "api",              // "api", "csv" or "skip". csv: M365 admin center > Agents > All agents > Export
     "workday": "skip",              // "csv" or "skip". Only if org data comes from a Workday export
     "productFeedback": "csv",       // "csv" or "skip". M365 admin center > Health > Product feedback > Export
-    "studioCredits": "csv",         // "csv" or "skip". Power Platform admin center > Licensing > Copilot Studio exports
-    "coworkCredits": "csv",         // "csv" or "skip". Viva Insights > Copilot Consumption Dashboard > Export (both CSVs)
+    "studioCredits": "csv",         // "csv" or "skip". Power Platform admin center > Licensing > Copilot Studio: tenant, per-agent and per-user reports (file list: step 4.6)
+    "coworkCredits": "csv",         // "csv" or "skip". Viva Insights > Copilot Consumption Dashboard > Export: PersonServiceCreditsMetrics + SpendingPolicyMetadata (step 4.6)
     "azureAi": "skip",              // "api" or "skip". "api" needs azure.subscriptionId below and the roles in step 2.4
     "agentEvaluator": "skip"        // "api" or "skip". "api" needs dataverseEnvironments below. There is no csv option
   },

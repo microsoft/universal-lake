@@ -84,9 +84,25 @@ Before it runs anything, `Lake_Orchestrator` checks these folders. If a source i
 |---|---|---|
 | `agent365` | `Files/agent365` | Microsoft 365 admin center > **Agents > All agents > Export** |
 | `productFeedback` | `Files/product_feedback` | Microsoft 365 admin center > **Health > Product feedback > Export** |
-| `studioCredits` | `Files/landing/studio` | Power Platform admin center > **Licensing > Copilot Studio**: Summary, Environments and Agents exports |
-| `coworkCredits` | `Files/landing/viva` | Viva Insights > **Copilot Consumption Dashboard > Export** (both CSVs) |
+| `studioCredits` | `Files/landing/studio` | Power Platform admin center > **Licensing > Copilot Studio** > download the reports. Which files: [below](#studio-and-viva-which-files) |
+| `coworkCredits` | `Files/landing/viva` | Viva Insights > **Copilot Consumption Dashboard > Export**. Which files: [below](#studio-and-viva-which-files) |
 | `workday` | `Files/org_workday` | Workday report of active workers with Primary Work Email, as CSV |
+
+### Studio and Viva: which files
+
+The notebooks find files **by name**, so upload the exports exactly as downloaded. Don't rename them, and don't upload files named after the lake's tables (for example `studio_agent.csv`, `studio_tenant_daily.csv`, `viva_credits_weekly.csv`, `viva_spending_policy.csv`): those are outputs, not exports, and the Viva one is ignored.
+
+| Upload to | File as downloaded (the date part varies) | Fills table | Needed? |
+|---|---|---|---|
+| `Files/landing/studio` | `EntitlementConsumptionTenantDetailsReport_MCSMessages….csv` | `studio_tenant_daily` (credits per environment per day) | **Yes**: the only one with dates, used for all totals and trends |
+| `Files/landing/studio` | `EntitlementConsumptionTenantPerAgentDetailsReport_MCSMessages….csv` | `studio_agent` (credits per agent) | Recommended |
+| `Files/landing/studio` | `EntitlementConsumptionTenantPerUserDetailsReport_MCSMessages….csv` | `studio_user` (credits per user per agent) | Optional |
+| `Files/landing/viva` | `PersonServiceCreditsMetrics….csv` | `viva_credits_weekly` (credits per person per week) | **Yes** |
+| `Files/landing/viva` | `SpendingPolicyMetadata….csv` | `viva_spending_policy` (policy names and limits) | Optional: without it, policies show as IDs |
+
+* **Studio's per-agent and per-user files have no dates.** They're totals for the period you exported, and get stamped with the month the notebook runs. Export them once a month (for example, the previous month) to build history.
+* **Viva only keeps 6 months.** Upload a new export at least monthly; older weeks stay in the lake once loaded.
+* Uploading the same period again is safe: rows are updated, not duplicated.
 
 ## Re-building later
 
