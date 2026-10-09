@@ -50,10 +50,16 @@ if not lakehouse_id:
 print(f'Workspace: {workspace_name} ({workspace_id})')
 print(f'Lakehouse: {lakehouse_name} ({lakehouse_id})')
 
-schemas = {r[0] for r in spark.sql('SHOW SCHEMAS').collect()}
-if 'dbo' not in schemas:
-    raise RuntimeError('This Lakehouse is not schema-enabled (it has no dbo schema). Create a new Lakehouse with '
-                       '"Lakehouse schemas" ticked; schemas cannot be turned on for an existing one.')
+def _schema_name(s):
+    return str(s).strip('`').split('.')[-1].strip('`').lower()
+
+schemas = {_schema_name(r[0]) for r in spark.sql('SHOW SCHEMAS').collect()}
+if 'dbo' not in schemas and not os.path.isdir('/lakehouse/default/Tables/dbo'):
+    print('Schemas Spark sees:', ', '.join(sorted(schemas)) or '(none)')
+    raise RuntimeError('This Lakehouse is not schema-enabled (it has no dbo schema). Check the Lakehouse explorer: a '
+                       'schema-enabled Lakehouse shows Tables > dbo. If it does, make sure THIS Lakehouse is pinned as '
+                       'the notebook default. If it does not, create a new Lakehouse with "Lakehouse schemas" ticked; '
+                       'schemas cannot be turned on for an existing one.')
 
 # %%
 ensure_ops()
