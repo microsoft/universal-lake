@@ -1,7 +1,5 @@
 {
   "$comment": "Copy to config.json (git-ignored) and fill in. Values marked <...> are required. Recommended: keep the client secret in Key Vault and leave clientSecret empty. Bypass (NOT recommended, e.g. a first run with no Key Vault yet): leave keyVault.uri as it is and put the secret in clientSecret; it is then written into the generated notebooks.",
-  "sourceRepo": "<path-to-source-repo-clone>",
-  "pinnedCommit": "52c1965d53d73d459b62a4c927865f2300049fe6",
 
   "tenantId": "<tenant-guid>",
   "appId": "<app-registration-client-id>",
@@ -45,8 +43,8 @@
 
   "semanticModels": {
     "universal":      { "name": "Universal Lake Model", "id": "" },
-    "consumption":    { "name": "Analytics Hub Consumption Model", "id": "" },
-    "agentEvaluator": { "name": "Analytics Hub Agent Evaluator Model", "id": "" }
+    "consumption":    { "name": "Universal Lake Consumption Model", "id": "" },
+    "agentEvaluator": { "name": "Universal Lake Agent Evaluator Model", "id": "" }
   },
 
   "modelSchema": "gold"

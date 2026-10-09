@@ -1,14 +1,14 @@
 # Step 7: Semantic models
 
-`Lake_Deploy_Models` creates the semantic models from the files you uploaded in [step 4.5](../04-import/README.md#45-upload-the-model-definitions), connects them to the gold tables and refreshes them. The models and relationships come from the installer's own model code, so they match what the installer deploys.
+`Lake_Deploy_Models` creates the semantic models from the files you uploaded in [step 4.5](../04-import/README.md#45-upload-the-model-definitions), connects them to the gold tables and refreshes them. The tables and relationships come from the definitions in [models/](../models).
 
 | Model | Display name | Tables | Relationships | Module |
 |---|---|---|---|---|
 | `universal` | Universal Lake Model | 20 | 10 | copilotInteractions |
-| `consumption` | Analytics Hub Consumption Model | 37 | 16 | consumption |
-| `agentEvaluator` | Analytics Hub Agent Evaluator Model | 43 | 23 | agentEvaluator |
+| `consumption` | Universal Lake Consumption Model | 37 | 16 | consumption |
+| `agentEvaluator` | Universal Lake Agent Evaluator Model | 43 | 23 | agentEvaluator |
 
-Models for modules you didn't pick are skipped. If models with these names already exist in the workspace (for example from the installer), they are **updated**, so use a different workspace or rename the old ones first.
+Models for modules you didn't pick are skipped. If models with these names already exist in the workspace, they are **updated**, so use a different workspace or rename the old ones first.
 
 To review a model before deploying, open `out/models/<model>/relationships.txt` or `model.bim` on your PC.
 

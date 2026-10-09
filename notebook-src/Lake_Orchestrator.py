@@ -1,8 +1,8 @@
 # %% [markdown]
 # # Orchestrator
 #
-# Runs the same steps, in the same order, as the installer's `CopilotAdoptionPipeline`, but one at a time from a
-# notebook, so every step is visible, logged and individually re-runnable.
+# Runs every ingest and processing step in order, one at a time from a notebook, so every step is visible,
+# logged and individually re-runnable.
 #
 # * Every step writes a `start` and an `end` row to `ops.run_log` (status, duration, exit value, full error).
 # * Every source that reads history writes the window it asked for to `ops.backfill_ledger` **before** it runs
@@ -64,9 +64,8 @@ print(f'modules={sorted(MODULES)}')
 # %% [markdown]
 # ## Steps
 #
-# Mirrors the installer: `pipeline.js` (`RUN_PARAMETERS`, `BINDINGS`, `SCALE_PROFILES`) and the template's activity
-# timeouts. Only the installer notebooks that have a **parameters cell** accept arguments; the others always run with
-# the values baked into them by `npm run sync`.
+# Each step's arguments, bindings, scale settings and timeout. Only the notebooks that have a **parameters cell**
+# accept arguments; the others always run with the values baked into them by `npm run sync`.
 
 # %%
 LARGE = SCALE == 'large'

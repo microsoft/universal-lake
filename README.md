@@ -41,16 +41,15 @@ flowchart LR
 
 Do these two things first. Every later step writes a value into `config.json`, so you need it from the start.
 
-**1. Get the code.** Install Git, **Node.js 20.12+** and **Python 3.9+** (check with `git --version`, `node --version`, `python --version`). Then clone this repo and the open-source repo its notebooks are generated from, side by side (this repo's URL is under **Code > Clone** at the top of its GitHub page):
+**1. Get the code.** Install Git, **Node.js 20.12+** and **Python 3.9+** (check with `git --version`, `node --version`, `python --version`). Then clone this repo (its URL is under **Code > Clone** at the top of its GitHub page). Everything it needs is inside; there's nothing else to download.
 
 ```powershell
 git clone <this-repo-url> UniversalLake
-git clone https://github.com/microsoft/ValueLens-for-Microsoft-Copilot source-repo
 cd UniversalLake
 copy config.template.json config.json
 ```
 
-Open `config.json` and set `"sourceRepo": "../source-repo"`. The file is git-ignored, so your IDs never get committed.
+`config.json` is git-ignored, so your IDs never get committed. There's no `npm install`: the build uses only Node.js and Python.
 
 **2. Choose your data sources.** Read the [data sources table](#data-sources) and, in `config.json` under `dataSources`, set each one to `api`, `csv` or `skip` ([what these mean](03-configure/README.md#31-finish-configjson)). This decides which permissions the app needs in step 2 and which export files you'll need. Start small if you like: `copilotInteractions` and `orgData` are required, and you can turn others on later.
 
@@ -83,7 +82,7 @@ Do them in order. Each folder's README has the exact clicks.
 | **Agent 365**<br/>`agent365` | Every agent in the tenant, with its publisher, status and owners | Graph `CopilotPackages.Read.All`, `Application.Read.All` (or a CSV export) |
 | **Product feedback**<br/>`productFeedback` | Copilot thumbs up and down, with comments | CSV from Microsoft 365 admin center > **Health > Product feedback > Export**.<br/>Role: Global Administrator or Reports Reader |
 | **Agent evaluator**<br/>`agentEvaluator` | Copilot Studio conversation transcripts, from Dataverse | No CSV; read directly from Dataverse. A Power Platform Administrator adds the app as an application user with **Bot Transcript Viewer** (Power Platform admin center) |
-| **Consumption**<br/>`consumption` | Copilot Studio and Copilot credits, Azure AI cost and tokens | **Studio credits:** CSV from Power Platform admin center > **Licensing > Copilot Studio**. Role: Power Platform Administrator<br/>**Copilot credits:** CSV from Viva Insights > **Copilot Consumption Dashboard > Export**. Role: Insights Analyst<br/>**Azure AI:** no CSV; the app needs Reader, Cost Management Reader and Monitoring Reader on the subscription |
+| **Consumption**<br/>`consumption` | Copilot Studio and Copilot credits, Azure AI cost and tokens | **Studio credits:** CSV from Power Platform admin center > **Licensing > Copilot Studio**. Role: Power Platform Administrator<br/>**Copilot credits:** CSV from Viva Insights > **Copilot Consumption Dashboard > Export**. Role: Insights Analyst<br/>**Azure AI:** no CSV. A subscription Owner gives the app Reader, Cost Management Reader and Monitoring Reader on the subscription ([2.4](02-permissions/README.md#24-azure-ai-access-only-if-azureai-is-api)) |
 
 ## What ends up in the Lakehouse
 
@@ -103,9 +102,9 @@ They ask Microsoft's APIs for data a few requests at a time, stay within Purview
 
 ## Where the notebook code comes from
 
-The ingesters, processor and model definitions are not written here. `npm run all` generates them from a fixed commit of the open-source [ValueLens for Microsoft Copilot](https://github.com/microsoft/ValueLens-for-Microsoft-Copilot) Fabric installer, so the extract logic is the same tested code. This repo adds the `Lake_*` notebooks that set up the Lakehouse, check credentials, sort tables into layers, deploy the models and run everything in order.
+Everything is in this repo. `notebooks/` holds the ingester and processor notebooks, `models/` the semantic model definitions (`.bim`), and `scripts/build/` the code that fills in your settings. `npm run all` turns them into the files you import. The `Lake_*` notebooks (sources in `notebook-src/`) set up the Lakehouse, check credentials, sort tables into layers, deploy the models and run everything in order.
 
-To take a newer version: pull the source repo, set `pinnedCommit` in `config.json`, run `npm run all`, re-import what it says changed ([step 4](04-import/README.md#re-building-later)), then run `Lake_Deploy_Models` and `Lake_Orchestrator`.
+To take a newer version of this repo: `git pull`, run `npm run all`, re-import what it says changed ([step 4](04-import/README.md#re-building-later)), then run `Lake_Deploy_Models` and `Lake_Orchestrator`.
 
 ## Keeping IDs and secrets out of the repo
 
@@ -116,7 +115,9 @@ Your IDs (and the secret, if you use the bypass) go only in `config.json` and `o
 ```
 01-fabric/ … 08-orchestrate/   one folder per step: README plus that step's notebook or script
 config.template.json           copy to config.json (git-ignored)
-scripts/                       generate notebooks and models; scan for secrets
+scripts/                       generate notebooks and models (scripts/build/); scan for secrets
+notebooks/                     ingester and processor notebook templates
+models/                        semantic model definitions (.bim)
 notebook-src/                  readable sources of the Lake_* notebooks
 out/                           generated, git-ignored: what you import into Fabric
 ```

@@ -1,5 +1,5 @@
-// Produces the source repo's notebooks exactly as the installer would deploy them, for manual import into Fabric.
-// Uses the installer's own catalog and notebook transform from the pinned clone, so nothing drifts.
+// Fills this repo's notebooks (notebooks/) with the IDs from config.json, for manual import into Fabric.
+// Only the notebooks for the data sources you chose are written.
 //
 //   node scripts/sync_notebooks.mjs [--config config.json]
 //
@@ -7,15 +7,13 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { OUT, PLACEHOLDER, fabricDir, installer, isSet, loadUserConfig, sourceState } from './lib.mjs';
+import { NOTEBOOKS_SRC, OUT, PLACEHOLDER, gitHead, isSet, loadUserConfig } from './lib.mjs';
+import { NOTEBOOKS_DIR, normaliseModules, notebooksFor, permissionsFor } from './build/catalog.js';
+import { prepareNotebook, serialiseNotebook } from './build/notebook.js';
+import { notebookOptions, notebookSettings } from './build/settings.js';
+import { modulesFromSources, normaliseDataSources } from './build/uploads.js';
 
 const { file, cfg } = loadUserConfig();
-const repo = cfg.sourceRepo;
-const { NOTEBOOKS_DIR, notebooksFor, permissionsFor } = await installer(repo, 'catalog.js');
-const { prepareNotebook, serialiseNotebook } = await installer(repo, 'transform/notebook.js');
-const { notebookSettings, notebookOptions } = await installer(repo, 'steps/fabric.js');
-const { emptyConfig } = await installer(repo, 'config.js');
-const { normaliseDataSources, modulesFromSources } = await installer(repo, 'uploads.js');
 
 const warnings = [];
 const need = (value, name) => {
@@ -24,14 +22,24 @@ const need = (value, name) => {
   return PLACEHOLDER(name);
 };
 
-// Build the installer's own config from ours.
-const config = emptyConfig();
+// The build's working settings, filled from config.json below.
+const config = {
+  modules: normaliseModules(undefined),
+  dataSources: {},
+  history: {},
+  app: {},
+  keyVault: {},
+  fabric: { notebooks: {} },
+  semanticModel: { name: 'Universal Lake Model' },
+  consumption: {},
+  agentEvaluator: { environments: [] },
+};
 config.dataSources = normaliseDataSources(cfg.dataSources, config.modules, { azureSubscriptionId: cfg.azure?.subscriptionId });
 config.modules = modulesFromSources(config.dataSources);
 config.history = { days: cfg.backfillDays ?? 30 };
 config.app.appId = need(cfg.appId, 'appId');
 // Key Vault is the default. Without a vault URI, a clientSecret in config.json is written into the notebooks instead
-// (the installer's own 'notebook' mode). Not recommended: anyone who can open the notebooks can read it.
+// ('notebook' mode). Not recommended: anyone who can open the notebooks can read it.
 const filled = (v) => isSet(v) && !v.includes('<');
 const inlineSecret = !filled(cfg.keyVault?.uri) && filled(cfg.clientSecret);
 if (inlineSecret) {
@@ -70,7 +78,8 @@ mkdirSync(dir, { recursive: true });
 
 const manifest = [];
 for (const nb of selected) {
-  const src = join(fabricDir(repo), nb.dir ?? NOTEBOOKS_DIR, nb.file);
+  const rel = [nb.dir ?? NOTEBOOKS_DIR, nb.file].filter((p) => p && p !== '.').join('/');
+  const src = join(NOTEBOOKS_SRC, rel);
   const raw = readFileSync(src, 'utf8');
   const prepared = serialiseNotebook(prepareNotebook(JSON.parse(raw), notebookSettings(ctx, nb)));
   const outName = `${nb.displayName}.ipynb`;
@@ -80,21 +89,17 @@ for (const nb of selected) {
     displayName: nb.displayName,
     module: nb.module,
     file: outName,
-    source: `${nb.dir ?? NOTEBOOKS_DIR}/${nb.file}`,
+    source: `notebooks/${rel}`,
     sourceSha256: createHash('sha256').update(raw).digest('hex'),
     outputSha256: createHash('sha256').update(prepared).digest('hex'),
   });
 }
 
-const state = sourceState(repo, cfg.pinnedCommit);
+const head = gitHead();
 const lock = {
   generatedUtc: new Date().toISOString(),
   config: file,
-  sourceRepo: repo,
-  head: state.head,
-  pinnedCommit: cfg.pinnedCommit,
-  matchesPin: state.matchesPin,
-  uncommittedChanges: state.dirty,
+  head,
   modules: config.modules,
   dataSources: config.dataSources,
   secretMode: inlineSecret ? 'notebook' : 'keyvault',
@@ -116,12 +121,10 @@ if (previous?.notebooks) {
   const added = [...after.keys()].filter((k) => !before.has(k));
   const removed = [...before.keys()].filter((k) => !after.has(k));
   const changed = [...after.keys()].filter((k) => before.has(k) && before.get(k) !== after.get(k));
-  console.log(`\nSince the previous sync (${previous.head?.slice(0, 7) ?? '?'} -> ${state.head?.slice(0, 7) ?? '?'}):`);
+  console.log(`\nSince the previous sync (${previous.head?.slice(0, 7) ?? '?'} -> ${head.slice(0, 7)}):`);
   if (!added.length && !removed.length && !changed.length) console.log('  no notebook changed; nothing to re-import');
   for (const k of changed) console.log(`  changed  ${k}   <- re-import`);
   for (const k of added) console.log(`  new      ${k}   <- import`);
   for (const k of removed) console.log(`  removed  ${k}   <- delete from the workspace if no longer used`);
 }
-if (!state.matchesPin) console.warn(`\nWARNING: clone HEAD ${state.head} is not the pinned ${cfg.pinnedCommit}.`);
-if (state.dirty.length) console.warn(`WARNING: ${state.dirty.length} uncommitted change(s) in the clone were included.`);
 for (const w of [...new Set(warnings)]) console.warn(`WARNING: ${w}`);

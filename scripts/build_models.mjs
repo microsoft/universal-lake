@@ -1,29 +1,27 @@
-// Builds the three semantic model definitions exactly as the installer would, then points them at the
-// Lakehouse's gold schema instead of dbo. Nothing is deployed: Lake_Deploy_Models.ipynb (or the UI) does that.
+// Builds the semantic model definitions from models/*.bim for the data sources you chose, then points
+// them at the Lakehouse's gold schema instead of dbo. Nothing is deployed: Lake_Deploy_Models.ipynb (or the UI) does that.
 //
 //   node scripts/build_models.mjs [--config config.json] [--schema gold]
 //
 // Output, per model: out/models/<Name>/model.bim, definition.pbism, definition.json (REST payload)
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { OUT, PLACEHOLDER, arg, fabricDir, installer, isSet, loadUserConfig } from './lib.mjs';
+import { MODELS_SRC, OUT, PLACEHOLDER, arg, isSet, loadUserConfig } from './lib.mjs';
+import * as m from './build/model.js';
+import { normaliseModules } from './build/catalog.js';
+import { modulesFromSources, normaliseDataSources } from './build/uploads.js';
 
 const { cfg } = loadUserConfig();
-const repo = cfg.sourceRepo;
 const schema = arg('schema', cfg.modelSchema || 'gold');
-const m = await installer(repo, 'transform/model.js');
-const { semanticModelDefinition } = await installer(repo, 'clients/fabric.js');
-const { normaliseDataSources, modulesFromSources } = await installer(repo, 'uploads.js');
-const { normaliseModules } = await installer(repo, 'catalog.js');
 
 const server = isSet(cfg.lakehouse?.sqlEndpoint) ? cfg.lakehouse.sqlEndpoint : PLACEHOLDER('lakehouse.sqlEndpoint');
 const database = cfg.lakehouse?.name || 'UniversalLake_LH';
 const modules = modulesFromSources(normaliseDataSources(cfg.dataSources, normaliseModules(undefined), { azureSubscriptionId: cfg.azure?.subscriptionId }));
 
 const MODELS = [
-  { key: 'universal', name: cfg.semanticModels?.universal?.name || 'Universal Lake Model', template: m.MODEL_TEMPLATE, build: (t) => m.buildModel(t, { server, database, modules }), on: true },
-  { key: 'consumption', name: cfg.semanticModels?.consumption?.name || 'Analytics Hub Consumption Model', template: m.CONSUMPTION_TEMPLATE, build: (t) => m.buildConsumptionModel(t, { server, database }), on: modules.consumption },
-  { key: 'agentEvaluator', name: cfg.semanticModels?.agentEvaluator?.name || 'Analytics Hub Agent Evaluator Model', template: m.AGENT_EVALUATOR_TEMPLATE, build: (t) => m.buildAgentEvaluatorModel(t, { server, database }), on: modules.agentEvaluator },
+  { key: 'universal', name: cfg.semanticModels?.universal?.name || 'Universal Lake Model', template: 'universal.bim', build: (t) => m.buildModel(t, { server, database, modules }), on: true },
+  { key: 'consumption', name: cfg.semanticModels?.consumption?.name || 'Universal Lake Consumption Model', template: 'consumption.bim', build: (t) => m.buildConsumptionModel(t, { server, database }), on: modules.consumption },
+  { key: 'agentEvaluator', name: cfg.semanticModels?.agentEvaluator?.name || 'Universal Lake Agent Evaluator Model', template: 'agentEvaluator.bim', build: (t) => m.buildAgentEvaluatorModel(t, { server, database }), on: modules.agentEvaluator },
 ];
 
 // Every place a model picks the Lakehouse schema: `each [Schema] = "dbo"` in its table-reader helper.
@@ -68,17 +66,17 @@ rmSync(dir, { recursive: true, force: true });
 const summary = [];
 for (const model of MODELS) {
   if (!model.on) { summary.push({ key: model.key, name: model.name, skipped: 'module not enabled' }); continue; }
-  const templatePath = join(fabricDir(repo), model.template);
+  const templatePath = join(MODELS_SRC, model.template);
   if (!existsSync(templatePath)) throw new Error(`Template not found: ${templatePath}`);
   const bim = model.build(m.loadTemplateModel(templatePath));
   const replaced = schema === 'dbo' ? 0 : retarget(bim);
-  if (schema !== 'dbo' && replaced === 0) throw new Error(`${model.name}: found no "dbo" schema reference to replace. The template changed; review before deploying.`);
+  if (schema !== 'dbo' && replaced === 0) throw new Error(`${model.name}: found no "dbo" schema reference to replace. models/${model.template} changed; review before deploying.`);
   const leftover = JSON.stringify(bim).match(/\[Schema\]\s*=\s*\\"dbo\\"/g)?.length ?? 0;
   const out = join(dir, model.key);
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'model.bim'), JSON.stringify(bim, null, 2));
   writeFileSync(join(out, 'definition.pbism'), JSON.stringify(m.PBISM, null, 2));
-  writeFileSync(join(out, 'definition.json'), JSON.stringify({ displayName: model.name, definition: semanticModelDefinition(bim, m.PBISM) }));
+  writeFileSync(join(out, 'definition.json'), JSON.stringify({ displayName: model.name, definition: m.semanticModelDefinition(bim, m.PBISM) }));
   const relationships = (bim.model.relationships ?? []).map((r) => `${r.fromTable}[${r.fromColumn}] -> ${r.toTable}[${r.toColumn}]${r.isActive === false ? ' (inactive)' : ''}`);
   writeFileSync(join(out, 'relationships.txt'), relationships.join('\n') + '\n');
   const reads = lakehouseTables(bim);

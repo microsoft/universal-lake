@@ -48,7 +48,7 @@ Open it > **Run all**. It writes nothing; run it as often as you like, and again
 | Audit log query API | Audit is on by default; check Microsoft Purview > **Audit** is recording, and that `AuditLogsQuery.Read.All` is consented. |
 | Usage reports show real user names | Turn off concealed names ([2.3](../02-permissions/README.md#23-give-the-app-access)). |
 | Copilot packages API | No Agent 365 in the tenant: set `dataSources.agent365` to `csv`, rebuild. |
-| Azure subscription / cost query | Give the app the three reader roles ([2.3](../02-permissions/README.md#23-give-the-app-access)). |
+| Azure subscription / cost query | Give the app the three reader roles on the subscription ([2.4](../02-permissions/README.md#24-azure-ai-access-only-if-azureai-is-api)). |
 | Dataverse / transcripts | Add the app as an application user with Bot Transcript Viewer. |
 
 **Don't continue until every required check passes.** It raises an error at the end if one fails.

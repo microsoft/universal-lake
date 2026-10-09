@@ -146,7 +146,7 @@ if __name__ == "__main__":
         out.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"{target}: {len(nb['cells'])} cells")
         if bind:
-            # Copy bound to your Lakehouse, next to the synced installer notebooks, so out/notebooks is the one
+            # Copy bound to your Lakehouse, next to the synced data notebooks, so out/notebooks is the one
             # folder you import. The committed copies stay unbound.
             bound = json.loads(json.dumps(nb))
             bound["metadata"] = dict(METADATA, dependencies={"lakehouse": {

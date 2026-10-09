@@ -3,12 +3,12 @@
   Creates (or reuses) the Universal Data Lake app registration, grants its permissions and stores its secret in Key Vault.
 
 .DESCRIPTION
-  Does by hand-reviewable az CLI calls what the installer's identity step does. Every call is printed before it
-  runs. The client secret goes straight from Entra into Key Vault and is never written to the console or a file.
+  Does steps 2.1-2.4 with hand-reviewable az CLI calls. Every call is printed before it runs. The client secret goes straight from Entra into Key Vault and is never written to the console or a file.
 
   Needs: Azure CLI 2.60+, signed in (az login --tenant <tenant>) as someone who can create app registrations and
   grant admin consent (Cloud Application Administrator + Privileged Role Administrator, or Global Administrator),
-  and who can set secrets in the Key Vault.
+  and who can set secrets in the Key Vault. With -AzureSubscriptionIds, also Owner, User Access Administrator or
+  Role Based Access Control Administrator on each subscription.
 
 .EXAMPLE
   ./setup-app.ps1 -KeyVaultName kv-universal-lake -Modules copilotInteractions,orgData,m365Activity
@@ -29,7 +29,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $GRAPH = '00000003-0000-0000-c000-000000000000'
 
-# Same map as the installer's catalog.js (module -> Graph application permissions).
+# Same map as scripts/build/catalog.js (module -> Graph application permissions).
 $PERMS = @{
   copilotInteractions = @('AuditLogsQuery.Read.All', 'Reports.Read.All')
   orgData         = @('User.Read.All')

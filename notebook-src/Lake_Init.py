@@ -13,7 +13,7 @@
 #
 # | Schema | Holds | Written by |
 # |---|---|---|
-# | `dbo` | The ingesters' working tables, exactly as the installer writes them | Ingester and processor notebooks (unchanged) |
+# | `dbo` | The ingesters' working tables, as they write them | Ingester and processor notebooks (unchanged) |
 # | `bronze` | Raw extracts: parsed audit records, raw transcripts, upload and load logs | Lake_Promote_Medallion |
 # | `silver` | Cleaned dimensions and module outputs the models do not read directly | Lake_Promote_Medallion |
 # | `gold` | Exactly the tables the semantic models read | Lake_Promote_Medallion |

@@ -16,7 +16,11 @@ const git = (...a) => execFileSync('git', a, { encoding: 'utf8' });
 const ALLOWED_GUIDS = new Set([
   '00000000-0000-0000-0000-000000000000',
   '00000003-0000-0000-c000-000000000000', // Microsoft Graph (resource app ID)
+  '9a18296a-025f-4e37-9ffa-30bf8d1ce775', // Microsoft 365 Copilot SKU ID (public)
+  '11111111-1111-1111-1111-111111111111', // placeholder
 ]);
+// Model-internal IDs in .bim files (lineage tags, relationship names, PBI_Id) carry no tenant data.
+const BIM_ID_LINE = /^\s*"(lineageTag|name|value)"\s*:\s*"[0-9a-f-]{36}",?\s*$/i;
 
 const RULES = [
   ['GUID (tenant, client, workspace or object ID?)', /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
@@ -30,7 +34,7 @@ const RULES = [
   ['Personal Windows profile path', /\b[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2}(?!<|%|\$|USERNAME\b|Public\b|you\b|me\b)[^\\/\s"'`]+/gi],
   ['Personal home path', /(?<![\w.])\/(home|Users)\/(?!<|\$|runner\b|you\b)[A-Za-z0-9._-]+/g],
   ['Email address', /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
-    (m) => !/@(users\.noreply\.github\.com|example\.(com|org)|contoso\.com|fabrikam\.com)$/i.test(m)],
+    (m) => !/@(users\.noreply\.github\.com|example\.(com|org)|contoso(-[a-z]+)?\.com|fabrikam\.com)$/i.test(m)],
   ['Personal OneDrive / SharePoint link', /https?:\/\/[A-Za-z0-9-]+-my\.sharepoint(-df)?\.com\S*/gi],
   ['Tenant domain', /\b(?!contoso|fabrikam|yourtenant|<)[A-Za-z0-9-]+\.onmicrosoft\.com\b/gi],
 ];
@@ -49,7 +53,7 @@ const files = (args.includes('--staged')
   : git('ls-files', '--cached', '--others', '--exclude-standard')
 ).split(/\r?\n/).filter((f) => f && existsSync(f));
 
-const SKIP = /\.(png|jpe?g|gif|ico|svg|pdf|pptx|docx|xlsx|zip)$/i;
+const SKIP = /\.(png|jpe?g|gif|ico|svg|pdf|pptx|docx|xlsx|zip|pbit|pbix)$/i;
 const findings = [];
 for (const f of files) {
   if (SKIP.test(f)) continue;
@@ -64,6 +68,7 @@ for (const f of files) {
   }
   text.split(/\r?\n/).forEach((line, i) => {
     for (const [name, re, keep = () => true] of RULES) {
+      if (name.startsWith('GUID') && f.endsWith('.bim') && BIM_ID_LINE.test(line)) continue;
       for (const m of line.matchAll(new RegExp(re.source, re.flags))) {
         if (keep(m[0])) findings.push(`${f}:${i + 1}: ${name}: ${m[0].slice(0, 12)}…`);
       }

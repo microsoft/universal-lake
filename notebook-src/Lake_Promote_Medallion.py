@@ -1,7 +1,7 @@
 # %% [markdown]
 # # Promote to bronze, silver and gold
 #
-# The ingesters and the processor are the installer's own notebooks, unchanged, so they write to `dbo`. This notebook
+# The ingesters and the processor write their working tables to `dbo`. This notebook
 # copies each `dbo` table into **exactly one** medallion layer, so the semantic models can read `gold` and nothing else.
 #
 # | Layer | Rule | Tables today |

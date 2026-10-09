@@ -1,7 +1,7 @@
 # %% [markdown]
 # # Deploy the semantic models
 #
-# Deploys the models built on your PC by `npm run models`, which uses the installer's own model code and points it
+# Deploys the models built on your PC by `npm run models`, which builds them from `models/*.bim` and points them
 # at the **gold** schema. Then it connects each model to the Lakehouse, refreshes it and checks it holds data.
 #
 # Before you run it:
@@ -80,7 +80,7 @@ def find_model(key, name):
 # %% [markdown]
 # ## Connection
 #
-# The models load the Lakehouse SQL endpoint in **Import** mode, the same as the installer.
+# The models load the Lakehouse SQL endpoint in **Import** mode.
 #
 # * `signin` (default): the model reads the Lakehouse with **your** Microsoft Entra sign-in. The first refresh asks
 #   for it once: model **Settings > Data source credentials > Edit credentials > OAuth2 > Sign in**. Nothing for an

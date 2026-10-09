@@ -5,7 +5,7 @@
 ```mermaid
 flowchart LR
   A["config.json<br/>your IDs + data sources"] --> B["npm run all"]
-  S["source repo<br/>notebook templates"] --> B
+  S["notebooks/ + models/<br/>notebook and model templates"] --> B
   B --> N["out/notebooks<br/>only the sources you chose,<br/>IDs filled in, Lakehouse attached"]
   B --> M["out/models<br/>semantic models on gold"]
   N --> I["Step 4: import into Fabric"]
@@ -22,7 +22,6 @@ Check every row below; replace any `<...>` left over. The build warns about any 
 
 | Field | Value | Where you got it |
 |---|---|---|
-| `sourceRepo` | `../source-repo` | [Before you start](../README.md#before-you-start) |
 | `tenantId` | Directory (tenant) ID | [2.1](../02-permissions/README.md#21-register-the-app-and-add-permissions), app Overview |
 | `appId` | Application (client) ID | [2.1](../02-permissions/README.md#21-register-the-app-and-add-permissions), app Overview |
 | `workspace.id` | GUID after `/groups/` in the URL | [1.4](../01-fabric/README.md#14-copy-three-values-from-fabric) |
@@ -71,7 +70,7 @@ It also prints the Graph permissions the chosen sources need, so you can check t
 | `backfillDays` | `30` | You want more audit history in the first load (max 180) |
 | `keyVault.secretName` | `universal-lake-client-secret` | You named the secret differently in 2.2 |
 | `lakehouse.name` | `UniversalLake_LH` | You named the Lakehouse differently in 1.3 |
-| `pinnedCommit`, `semanticModels`, `modelSchema` | as shipped | Leave them |
+| `semanticModels`, `modelSchema` | as shipped | Leave them |
 
 ## 3.2 Generate the files to import
 
@@ -79,7 +78,7 @@ It also prints the Graph permissions the chosen sources need, so you can check t
 npm run all
 ```
 
-This only writes files on your PC. It checks the source repo, picks the notebooks your `dataSources` need, fills in your IDs, builds the semantic model definitions for the `gold` schema, and builds this repo's `Lake_*` notebooks. Output:
+This only writes files on your PC. It picks the notebooks your `dataSources` need, fills in your IDs, builds the semantic model definitions for the `gold` schema, and builds this repo's `Lake_*` notebooks. Output:
 
 | Folder | Contains | Used in |
 |---|---|---|
