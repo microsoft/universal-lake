@@ -70,6 +70,8 @@ for name in OPS_TABLES:
 # %% [markdown]
 # ## Files folders
 #
+# Only the folders for the sources you turned on are created (`analytics_hub_uploads` and `universal_lake/models` always).
+#
 # | Folder | Read by | Put here |
 # |---|---|---|
 # | `Files/analytics_hub_uploads` | Upload Router | Any CSV export; the router recognises it and moves it to the right folder |
@@ -81,8 +83,14 @@ for name in OPS_TABLES:
 # | `Files/universal_lake/models` | Lake_Promote_Medallion, Lake_Deploy_Models | Upload the whole `out/models` folder from `npm run models` here (`gold_tables.json`, `<key>/definition.json`) |
 
 # %%
-FOLDERS = ['analytics_hub_uploads', 'agent365', 'product_feedback', 'landing/studio', 'landing/viva', 'org_workday',
-           'universal_lake/models']
+_mods = {m.strip() for m in MODULES.split(',') if m.strip()}
+_csv = {s.strip() for s in CSV_SOURCES.split(',') if s.strip()}
+FOLDERS = ['analytics_hub_uploads', 'universal_lake/models']
+if 'agent365' in _mods: FOLDERS.append('agent365')
+if 'productFeedback' in _mods: FOLDERS.append('product_feedback')
+if 'consumption' in _mods: FOLDERS += ['landing/studio', 'landing/viva']
+if 'workday' in _csv: FOLDERS.append('org_workday')
+print('Created only for the sources you turned on:')
 for f in FOLDERS:
     os.makedirs(f'/lakehouse/default/Files/{f}', exist_ok=True)
     print(f'  Files/{f}')

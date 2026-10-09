@@ -39,7 +39,7 @@ It creates:
 
 * schemas `bronze`, `silver`, `gold`, `ops` (next to `dbo`);
 * `ops.config` with your settings, which the other notebooks read;
-* the `Files/` folders for uploads, including `Files/universal_lake/`.
+* the `Files/` folders for uploads: `analytics_hub_uploads`, `universal_lake/models`, and one per source you turned on (sources set to `skip` get none).
 
 It ends by listing any setting that is still missing. It is safe to re-run; it never deletes anything.
 
