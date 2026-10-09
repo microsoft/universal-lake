@@ -39,7 +39,18 @@ flowchart LR
 
 ## Before you start
 
-Do these two things first. Every later step writes a value into `config.json`, so you need it from the start.
+**How it fits together.** All your settings go in one file, `config.json`. **You don't fill it in now**: you don't have the values yet. Steps 1 to 3 produce them, and each step tells you which line to paste into:
+
+| Step | What you create | What goes into `config.json` |
+|---|---|---|
+| 1 | A Fabric workspace and Lakehouse | Their IDs |
+| 2 | An app registration with permissions | Its IDs and secret (or Key Vault) |
+| 3 | Your choice of data sources | `api`, `csv` or `skip` for each |
+
+**Where the data comes from.** The lake gets data in two ways:
+
+* **APIs:** the app you register in step 2 pulls it automatically, every day. No files to handle.
+* **CSV exports:** a few sources (product feedback, Copilot Studio credits, Viva Copilot credits) have no API, so someone **exports them from an admin portal** and you upload them.
 
 **1. Get the code.** Install Git, **Node.js 20.12+** and **Python 3.9+** (check with `git --version`, `node --version`, `python --version`). Then clone this repo (its URL is under **Code > Clone** at the top of its GitHub page). Everything it needs is inside; there's nothing else to download.
 
@@ -49,12 +60,16 @@ cd UniversalLake
 copy config.template.json config.json
 ```
 
-`config.json` is git-ignored, so your IDs never get committed. There's no `npm install`: the build uses only Node.js and Python. If `npm` is blocked on your PC (e.g. a Microsoft-managed device), see [If `npm run all` doesn't work](03-configure/README.md#if-npm-run-all-doesnt-work). Each setting has a `//` comment explaining what it is, where to find it and when you can leave it alone. The comments are allowed and you can leave them in (your editor may underline them; that's fine).
+`config.json` is git-ignored, so your IDs never get committed. Leave it as it is for now. Each setting has a `//` comment saying what it is and where it comes from; leave the comments in (your editor may underline them; that's fine). There's no `npm install`: the build uses only Node.js and Python. If `npm` is blocked on your PC (e.g. a Microsoft-managed device), see [If `npm run all` doesn't work](03-configure/README.md#if-npm-run-all-doesnt-work).
 
-**2. Choose your data sources.** Read the [data sources table](#data-sources) and, in `config.json` under `dataSources`, set each one to `api`, `csv` or `skip` ([what these mean](03-configure/README.md#31-finish-configjson)). This decides which permissions the app needs in step 2 and which export files you'll need. Start small if you like: `copilotInteractions` and `orgData` are required, and you can turn others on later.
+**2. Decide which sources you want.** Look at the [data sources table](#data-sources). `copilotInteractions` and `orgData` are required; start with those and add others later if you like. Your choice decides the app's permissions in step 2, so make it now (you write it into `config.json` in step 3).
 
-* **`skip`** leaves the source out, and you can ignore its settings: `azure` is only read when `azureAi` is `api`, and `dataverseEnvironments` only when `agentEvaluator` is `api`.
-* **`csv`**: **download the export now and save it on your PC.** That's all for now: you don't create any folders. `Lake_Init` creates a Lakehouse folder for each source in [step 4.3](04-import/README.md), and you upload the files there in [step 4.6](04-import/README.md#46-upload-csv-exports-only-sources-set-to-csv). Where each export comes from is in the [data sources table](#data-sources). No file yet? Use `skip`, or keep `csv`: the run still finishes, but that source's tables stay empty until you upload.
+**3. Start the CSV exports now (only for CSV sources you want).** They need admin roles you may not have, so ask early:
+
+* Find the role for each export in the [data sources table](#data-sources) and ask whoever has it.
+* Save **all the exported files in one folder on your PC**, outside this repo (for example `Documents\UniversalLake-exports`). **Don't rename them**; the notebooks find them by their original names.
+* That's all for now. You upload them in [step 4.6](04-import/README.md#46-upload-csv-exports-only-sources-set-to-csv), after the Lakehouse folders exist.
+* Can't get a file yet? You can still build the lake; that source's tables stay empty until you upload.
 
 ## Steps
 
@@ -64,7 +79,7 @@ Do them in order. Each folder's README has the exact clicks.
 |---|---|---|
 | [1. Fabric](01-fabric/README.md) | Create the workspace and a **schema-enabled** Lakehouse, copy their IDs into `config.json` | Fabric portal |
 | [2. Permissions](02-permissions/README.md) | Register the app, store its secret, give it access, **confirm the checklist** | Entra, Microsoft 365 admin, Azure portals |
-| [3. Configure](03-configure/README.md) | Check `config.json` is complete, run `npm run all` to generate the notebooks and model files | Your PC |
+| [3. Configure](03-configure/README.md) | Set your data sources in `config.json`, check it's complete, run `npm run all` to generate the notebooks and model files | Your PC |
 | [4. Import](04-import/README.md) | Import the notebooks, run `Lake_Init` and `Lake_Validate_Credentials`, upload the model files | Fabric |
 | [5. Ingest](05-ingest/README.md) | Run `Lake_Orchestrator` once with `first_load`: all ingesters, the first backfill, processing and promote | Fabric |
 | [6. Process](06-process/README.md) | Check that the data was cleaned and sorted into report-ready tables | Fabric |

@@ -1,5 +1,6 @@
 // Universal Lake settings.
-// Copy this file to config.json (git-ignored, so your IDs are never committed) and fill it in.
+// Copy this file to config.json (git-ignored, so your IDs are never committed). Don't fill it in yet:
+// you fill it in as you go. Step 1: workspace and Lakehouse. Step 2: app and secret. Step 3: data sources.
 // Lines starting with // are guidance; the build ignores them, so you can leave them in.
 // Replace every value shown as <...>. The build (npm run all) warns about any you miss.
 // Field-by-field help: 03-configure/README.md, step 3.1.
