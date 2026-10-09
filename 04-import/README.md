@@ -66,6 +66,8 @@ If you see `Files/universal_lake/universal/...` (no `models` level), you uploade
 
 Upload each export to its folder under **Files** (created by 4.3). Not sure which? Use `Files/analytics_hub_uploads`; the upload router recognises the file and moves it. You can also do this later.
 
+Before it runs anything, `Lake_Orchestrator` checks these folders. If a source is set to `csv` and its folder is empty, it prints a **WARNING** in the plan and again at the end, and carries on: the step still runs, but its table stays empty. Upload the file, then rerun just that step (for example `STEPS = 'product_feedback'`).
+
 | Source | Folder | Export from |
 |---|---|---|
 | `agent365` | `Files/agent365` | Microsoft 365 admin center > **Agents > All agents > Export** |

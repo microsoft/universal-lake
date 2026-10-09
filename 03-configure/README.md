@@ -59,6 +59,8 @@ This is your list of what to load. For each source, the build:
 
 It also prints the Graph permissions the chosen sources need, so you can check them against step 2.
 
+> **Before you set a source to `csv`, make sure you have its export file** (or can get it: see [step 4.6](../04-import/README.md#46-upload-csv-exports-only-sources-set-to-csv) for where it comes from and who can export it). Without the file the run still finishes, but that source's tables stay empty and its report pages are blank. If you don't have it yet, set the source to `skip` for now.
+
 | Source | Required? | Allowed | Notes |
 |---|---|---|---|
 | `copilotInteractions` | **Required** | `api` | Copilot prompts and responses, from the audit log |

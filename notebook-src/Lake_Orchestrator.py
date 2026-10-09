@@ -158,6 +158,40 @@ plan = [(n, nb, m, c, t, a, l, r or ('' if n not in MODEL_KEY or cfg(f'model_id.
                                        else f'no model_id.{MODEL_KEY[n]} in ops.config; run Lake_Deploy_Models'))
         for (n, nb, m, c, t, a, l, r) in plan]
 
+# Sources set to 'csv' need their export uploaded first. A missing file doesn't stop the run: the step still runs
+# and leaves its table empty, so warn now and again in the summary.
+import os
+CSV_CHECKS = {  # config.json name: (step, folder, what to upload)
+    'productFeedback': ('product_feedback', 'product_feedback', 'the product feedback export'),
+    'studioCredits':   ('studio',           'landing/studio',   'the Copilot Studio credit exports'),
+    'coworkCredits':   ('viva',             'landing/viva',     'the Copilot Consumption Dashboard exports'),
+    'agent365':        ('agent365',         'agent365',         'agents.csv from Agents > All agents > Export'),
+}
+
+def _files(folder):
+    path = f'/lakehouse/default/Files/{folder}'
+    try:
+        return [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+    except FileNotFoundError:
+        return []
+
+running = {n for (n, *_rest, r) in plan if not r}
+csv_sources = [s for s in _csv(cfg('csv_sources', '') or '') if s in CSV_CHECKS]
+pending_uploads = _files('analytics_hub_uploads') if 'upload_router' in running else []
+csv_warnings = []
+for src in csv_sources:
+    step, folder, what = CSV_CHECKS[src]
+    if step in running and not _files(folder) and not pending_uploads:
+        csv_warnings.append(f"{src} is set to 'csv' but Files/{folder} is empty. Step {step} will still run, but its "
+                            f"table stays empty. Upload {what} (step 4.6), then rerun with STEPS='{step}'.")
+print('Upload check: ' + ('all CSV sources have files.' if csv_sources and not csv_warnings
+                         else 'no sources set to csv.' if not csv_sources else ''))
+for w in csv_warnings:
+    print(f'  WARNING: {w}')
+if pending_uploads:
+    print(f'  {len(pending_uploads)} file(s) in Files/analytics_hub_uploads; the upload router sorts them first.')
+print()
+
 now = utcnow()
 def window(days):
     return (now - timedelta(days=days), now) if days else (None, None)
@@ -290,6 +324,8 @@ ledger_summary()
 summary = {'run_id': RUN_ID, 'run_mode': RUN_MODE, 'results': results,
            'failed': [f[0] for f in failures]}
 print(json.dumps(summary, indent=2))
+for w in csv_warnings:
+    print(f'WARNING: {w}')
 if failures:
     print('\nTo re-run only what did not succeed:')
     print(f"  RUN_MODE='{RUN_MODE}', RUN_ID='{RUN_ID}', RERUN_FAILED=True")

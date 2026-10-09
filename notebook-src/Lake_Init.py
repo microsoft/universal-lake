@@ -29,6 +29,7 @@ SQL_ENDPOINT = ''                    # Lakehouse > SQL analytics endpoint > Sett
 SCALE = 'standard'                   # 'standard' or 'large' (more than ~20k Copilot users, or busy audit logs)
 BACKFILL_DAYS = 30                   # audit history the first load fetches (max 180)
 MODULES = 'copilotInteractions,orgData,m365Activity,agent365,productFeedback,consumption,agentEvaluator'
+CSV_SOURCES = 'productFeedback,studioCredits,coworkCredits'  # sources set to 'csv'; Lake_Orchestrator checks their folders
 MODEL_ID_UNIVERSAL = ''              # filled in by Lake_Deploy_Models; set here only to reuse an existing model
 MODEL_ID_CONSUMPTION = ''
 MODEL_ID_AGENT_EVALUATOR = ''
@@ -86,7 +87,7 @@ cfg_set({
     'lakehouse_id': lakehouse_id, 'lakehouse_name': lakehouse_name, 'sql_endpoint': SQL_ENDPOINT,
     'tenant_id': TENANT_ID, 'client_id': CLIENT_ID, 'key_vault_uri': KEY_VAULT_URI, 'secret_name': SECRET_NAME,
     'secret_mode': 'notebook' if SECRET_IN_NOTEBOOKS else 'keyvault',
-    'scale': SCALE, 'backfill_days': BACKFILL_DAYS, 'modules': MODULES,
+    'scale': SCALE, 'backfill_days': BACKFILL_DAYS, 'modules': MODULES, 'csv_sources': CSV_SOURCES,
     'model_id.universal': MODEL_ID_UNIVERSAL, 'model_id.consumption': MODEL_ID_CONSUMPTION,
     'model_id.agentEvaluator': MODEL_ID_AGENT_EVALUATOR,
 })

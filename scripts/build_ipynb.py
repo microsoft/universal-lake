@@ -34,6 +34,10 @@ def is_set(v):
     return v not in (None, "") and "<" not in str(v)
 
 
+# dataSources set to 'csv' whose upload folder Lake_Orchestrator checks before a run.
+CSV_CHECKED = ("productFeedback", "studioCredits", "coworkCredits", "agent365")
+
+
 def inline_secret(cfg):
     """No Key Vault URI but a clientSecret in config.json: the secret goes into the notebooks (not recommended)."""
     return not is_set(cfg.get("keyVault", {}).get("uri")) and is_set(cfg.get("clientSecret"))
@@ -64,6 +68,8 @@ def prefill_values(cfg):
         "BACKFILL_DAYS": cfg.get("backfillDays"),
         "MODULES": ",".join(modules),
         "AGENT365_SOURCE": cfg.get("dataSources", {}).get("agent365"),
+        "CSV_SOURCES": ",".join(k for k, v in cfg.get("dataSources", {}).items()
+                                if v == "csv" and k in CSV_CHECKED) or "none",
         "AZURE_SUBSCRIPTION_IDS": ",".join(dict.fromkeys(s for s in subs if is_set(s))),
         "DATAVERSE_URLS": ",".join(u for u in urls if is_set(u)),
     }
