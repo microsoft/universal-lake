@@ -20,6 +20,13 @@ flowchart LR
   M -.-> U["Power BI templates,<br/>Fabric apps, agents<br/>(later, separate)"]
 ```
 
+## Disclaimer
+
+> [!IMPORTANT]
+> **This is not the official Copilot report.** The official sources for Copilot usage reporting are the **Microsoft 365 admin center** (Copilot usage reports) and **Viva Insights** (Copilot Dashboard). This lake builds its Copilot figures from the Purview audit log, which is not the authoritative source for usage reporting. Its numbers may not always match the official reports exactly.
+>
+> **You are responsible for the data once it is extracted.** Retention, deletion and other policies set in the source systems (Purview, Microsoft 365, Entra ID, Dataverse and others) do not apply to the copies this lake makes. It is up to you to manage the extracted data and comply with the requirements that apply to your organisation.
+
 ## What you need
 
 | | Minimum |
