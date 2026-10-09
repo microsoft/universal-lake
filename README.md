@@ -35,7 +35,24 @@ flowchart LR
 | Fabric workspace | One, where you are **Admin** or **Member** |
 | Entra ID | Rights to register an app, and an admin who can grant consent |
 | Azure Key Vault | **Recommended** for the app's secret. No vault yet? You can put the secret in `config.json` for a first run (not recommended; see [step 2.2](02-permissions/README.md#22-store-the-client-secret)). |
-| A PC with | Git, Node.js 20.12+, Python 3.9+ |
+| A PC with | Git, Node.js 20.12+, Python 3.9+ (see [Before you start](#before-you-start)) |
+
+## Before you start
+
+Do these two things first. Every later step writes a value into `config.json`, so you need it from the start.
+
+**1. Get the code.** Install Git, **Node.js 20.12+** and **Python 3.9+** (check with `git --version`, `node --version`, `python --version`). Then clone this repo and the open-source repo its notebooks are generated from, side by side (this repo's URL is under **Code > Clone** at the top of its GitHub page):
+
+```powershell
+git clone <this-repo-url> UniversalLake
+git clone https://github.com/microsoft/ValueLens-for-Microsoft-Copilot source-repo
+cd UniversalLake
+copy config.template.json config.json
+```
+
+Open `config.json` and set `"sourceRepo": "../source-repo"`. The file is git-ignored, so your IDs never get committed.
+
+**2. Choose your data sources.** Read the [data sources table](#data-sources) and, in `config.json` under `dataSources`, set each one to `api`, `csv` or `skip` ([what these mean](03-configure/README.md#31-finish-configjson)). This decides which permissions the app needs in step 2 and which export files you'll need. Start small if you like: `copilotInteractions` and `orgData` are required, and you can turn others on later.
 
 ## Steps
 
@@ -43,9 +60,9 @@ Do them in order. Each folder's README has the exact clicks.
 
 | Step | You do | Where |
 |---|---|---|
-| [1. Fabric](01-fabric/README.md) | Create the workspace and a **schema-enabled** Lakehouse, copy their IDs from the URL | Fabric portal |
-| [2. Permissions](02-permissions/README.md) | Register the app, store its secret, give it access, **confirm the checklist** | Entra, Fabric admin, Azure portals |
-| [3. Configure](03-configure/README.md) | Fill in `config.json`, run `npm run all` to generate the notebooks and model files | Your PC |
+| [1. Fabric](01-fabric/README.md) | Create the workspace and a **schema-enabled** Lakehouse, copy their IDs into `config.json` | Fabric portal |
+| [2. Permissions](02-permissions/README.md) | Register the app, store its secret, give it access, **confirm the checklist** | Entra, Microsoft 365 admin, Azure portals |
+| [3. Configure](03-configure/README.md) | Check `config.json` is complete, run `npm run all` to generate the notebooks and model files | Your PC |
 | [4. Import](04-import/README.md) | Import the notebooks, run `Lake_Init` and `Lake_Validate_Credentials`, upload the model files | Fabric |
 | [5. Ingest](05-ingest/README.md) | Run `Lake_Orchestrator` once with `first_load`: all ingesters, the first backfill, processing and promote | Fabric |
 | [6. Process](06-process/README.md) | Check that the data was cleaned and sorted into report-ready tables | Fabric |
@@ -56,7 +73,7 @@ Do them in order. Each folder's README has the exact clicks.
 
 ## Data sources
 
-Only **Copilot interactions** is required. Turn the others on in `config.json` (step 3), now or later. The tables each one creates are listed in [step 6](06-process/README.md).
+**Copilot interactions** and **Org data** are required. Pick the others before step 2 (see [Before you start](#before-you-start)), because they decide the app's permissions. You can add more later. The tables each one creates are listed in [step 6](06-process/README.md).
 
 | Source (`config.json` name) | What you get | Needs |
 |---|---|---|

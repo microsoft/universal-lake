@@ -1,6 +1,6 @@
 # Step 2: Permissions
 
-The notebooks sign in to Microsoft Graph (and, optionally, Azure and Dataverse) as an **app registration** with a client secret. In this step you register the app with the permissions your sources need, store its secret, give it access to the Lakehouse, and confirm with the checklist at the end.
+The notebooks sign in to Microsoft Graph (and, optionally, Azure and Dataverse) as an **app registration** with a client secret. In this step you register the app with the permissions for the data sources you chose in [Before you start](../README.md#before-you-start), store its secret, give it access to the Lakehouse, and confirm with the checklist at the end.
 
 Most failures later are a missing item from this page, so **don't skip the checklist**.
 
@@ -10,8 +10,8 @@ All in the [Entra admin center](https://entra.microsoft.com):
 
 1. **Applications > App registrations > New registration.** Name it `Universal Data Lake`, *Accounts in this organizational directory only*, no redirect URI. **Register**.
 2. On the app's **Overview** page, copy:
-   * **Application (client) ID** → `appId` in step 3
-   * **Directory (tenant) ID** → `tenantId` in step 3
+   * **Application (client) ID** → `appId` in `config.json`
+   * **Directory (tenant) ID** → `tenantId` in `config.json`
 3. **API permissions > Add a permission > Microsoft Graph > Application permissions.** Tick the permissions for each data source you'll use, then **Add permissions**:
 
    | Data source | Graph application permissions |
@@ -34,7 +34,7 @@ The secret stays in the vault; the notebooks fetch it each run as the person run
 1. In the Azure portal, open your Key Vault (or create one) > **Objects > Secrets > Generate/Import**.
 2. Name `universal-lake-client-secret`, Value = the secret from 2.1, set the same expiry date. **Create**.
 3. **Access control (IAM) > Add role assignment > Key Vault Secrets User**, for **you** and anyone else who will run notebooks or own the schedule. (Being vault Owner isn't enough on an RBAC vault.)
-4. Copy the **Vault URI** from the vault's **Overview** (`https://<name>.vault.azure.net/`) → `keyVault.uri` in step 3.
+4. Copy the **Vault URI** from the vault's **Overview** (`https://<name>.vault.azure.net/`) → `keyVault.uri` in `config.json`.
 
 You need *Key Vault Secrets Officer* (or a vault admin's help) to create the secret.
 
@@ -42,7 +42,7 @@ You need *Key Vault Secrets Officer* (or a vault admin's help) to create the sec
 
 Use this only if you don't have a Key Vault yet, or can't get the Secrets Officer role, and want a first run working.
 
-* In step 3, leave `keyVault.uri` as it is and paste the secret into `"clientSecret"` in `config.json`.
+* Leave `keyVault.uri` as it is and paste the secret into `"clientSecret"` in `config.json`.
 * The build then writes the secret **into the generated notebooks**. Anyone who can open those notebooks in the workspace can read it.
 
 If you take this route: keep workspace access to the people who need it, don't share or export the notebooks, never commit `config.json` or `out/` (both are git-ignored), and move to Option 1 as soon as you can (set `keyVault.uri`, clear `clientSecret`, rebuild and re-import).
@@ -59,7 +59,7 @@ You don't need to turn on audit logging: it's on by default in Microsoft 365 ten
 
 ## 2.4 Confirm before you continue
 
-- [ ] The app exists; I have its **tenant ID** and **client ID**.
+- [ ] The app exists; its **tenant ID** and **client ID** are in `config.json`.
 - [ ] Admin consent shows green ticks for every Graph permission I need.
 - [ ] The secret is in Key Vault and I have *Key Vault Secrets User* **— or —** I've knowingly chosen the `config.json` bypass and have the secret value.
 - [ ] Concealed names in reports are off.
@@ -69,7 +69,7 @@ You don't need to turn on audit logging: it's on by default in Microsoft 365 ten
 
 ## Optional: do 2.1–2.3 with a script
 
-If you have the Azure CLI and a Key Vault you can write to, `setup-app.ps1` registers the app, adds and consents the permissions, stores the secret in the vault and assigns the subscription roles. It is safe to re-run; add `-WhatIf` to preview.
+If you have the Azure CLI and a Key Vault you can write to, `setup-app.ps1` (run from the `UniversalLake` folder) registers the app, adds and consents the permissions, stores the secret in the vault and assigns the subscription roles. It is safe to re-run; add `-WhatIf` to preview.
 
 ```powershell
 az login --tenant <tenant-id>

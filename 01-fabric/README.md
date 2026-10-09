@@ -1,6 +1,6 @@
 # Step 1: Fabric capacity, workspace and Lakehouse
 
-Everything lives in **one Fabric workspace**: one Lakehouse, about 20 notebooks and up to three semantic models. Nothing is needed on your PC yet.
+Everything lives in **one Fabric workspace**: one Lakehouse, about 20 notebooks and up to three semantic models. Have `config.json` open from [Before you start](../README.md#before-you-start); you'll paste values into it at the end.
 
 ## 1.1 Pick a capacity
 
@@ -10,7 +10,7 @@ Notebooks need a **Fabric capacity** (F SKU) or a Fabric trial. A Pro or PPU wor
 |---|---|---|
 | Trying it out | **Fabric trial** (free, 60 days, F64-sized) | Fabric portal > your account picture > **Start trial**. Move to paid capacity before it ends. |
 | Up to ~10,000 people with Copilot | **F2** or larger | A 30-day first load usually takes under an hour. |
-| More than ~10–20k people | **F64** or larger | Also set `scale` to `large` in step 3. A first load can take several hours. |
+| More than ~10–20k people | **F64** or larger | Also set `scale` to `large` in `config.json`. A first load can take several hours. |
 
 Good to know:
 
@@ -35,7 +35,7 @@ Fabric also creates a **SQL analytics endpoint** with the same name. The semanti
 
 ## 1.4 Copy three values from Fabric
 
-You'll paste these into `config.json` in step 3. Keep them private.
+Paste each into `config.json` as you copy it. Keep them private.
 
 **Workspace ID and Lakehouse ID are in the browser address bar.** Open the Lakehouse and look at the URL:
 
@@ -44,8 +44,8 @@ https://app.fabric.microsoft.com/groups/<workspace-id>/lakehouses/<lakehouse-id>
                                         ^ workspace ID            ^ lakehouse ID
 ```
 
-* **Workspace ID**: the GUID right after `/groups/`.
-* **Lakehouse ID**: the GUID right after `/lakehouses/`, up to the `?`.
+* **Workspace ID**: the GUID right after `/groups/` → `workspace.id`. Also put the workspace's name in `workspace.name`.
+* **Lakehouse ID**: the GUID right after `/lakehouses/`, up to the `?` → `lakehouse.id`.
 
 (Each ID looks like `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`. If the URL says `/groups/me/`, you're in *My workspace*: switch to the workspace from 1.2.)
 
@@ -53,12 +53,12 @@ https://app.fabric.microsoft.com/groups/<workspace-id>/lakehouses/<lakehouse-id>
 
 1. In the workspace list, open the item of type **SQL analytics endpoint** named `UniversalLake_LH`.
 2. **Settings** (gear) > **SQL endpoint** > copy the **SQL connection string**.
-3. Keep **only the host name**, which looks like `abcd1234efgh.datawarehouse.fabric.microsoft.com`. No `https://`, no port, nothing after it.
+3. Keep **only the host name**, which looks like `abcd1234efgh.datawarehouse.fabric.microsoft.com`. No `https://`, no port, nothing after it. → `lakehouse.sqlEndpoint`
 
 ## Checklist
 
 - [ ] Workspace on a Fabric capacity or trial, and you are Admin or Member.
 - [ ] `UniversalLake_LH` shows a `dbo` folder (schemas are on).
-- [ ] You have the workspace ID, Lakehouse ID and SQL endpoint host.
+- [ ] `workspace.id`, `workspace.name`, `lakehouse.id` and `lakehouse.sqlEndpoint` are filled in `config.json`.
 
 Next: [Step 2: Permissions](../02-permissions/README.md)

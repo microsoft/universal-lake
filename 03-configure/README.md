@@ -1,6 +1,6 @@
 # Step 3: Configure
 
-**What happens in this step:** you write your values (tenant, app, workspace, Lakehouse, secret, which data sources you want) into one file, `config.json`. A build command then puts those values into the notebooks and semantic model files, so you don't edit any notebook by hand. Everything runs on your PC; nothing goes to Fabric until step 4.
+**What happens in this step:** you check that `config.json` has all your values (you filled most of them in during steps 1 and 2). A build command then puts those values into the notebooks and semantic model files, so you don't edit any notebook by hand. Everything runs on your PC; nothing goes to Fabric until step 4.
 
 ```mermaid
 flowchart LR
@@ -12,34 +12,17 @@ flowchart LR
   M --> I
 ```
 
-The steps: install the tools (3.1), get the code (3.2), fill in `config.json` (3.3), and run `npm run all` (3.4).
+The steps: finish `config.json` (3.1) and run `npm run all` (3.2). You already have the code and `config.json` from [Before you start](../README.md#before-you-start).
 
-## 3.1 Install the tools
-
-Git, **Node.js 20.12+** and **Python 3.9+** (no extra packages). Check with `git --version`, `node --version`, `python --version`.
-
-## 3.2 Get the code
-
-The ingester notebooks and model definitions are generated from a fixed version of the open-source installer (the *source repo*). Clone both repos next to each other (use the URL from **Code > Clone** at the top of this repo's GitHub page):
-
-```powershell
-git clone <this-repo-url> UniversalLake
-git clone https://github.com/microsoft/ValueLens-for-Microsoft-Copilot source-repo
-cd UniversalLake
-copy config.template.json config.json
-```
-
-`config.json` is git-ignored, so your IDs never get committed.
-
-## 3.3 Fill in `config.json`
+## 3.1 Finish `config.json`
 
 ### Required: every setup
 
-Replace each `<...>` value. The build warns about any you miss.
+Check every row below; replace any `<...>` left over. The build warns about any you miss.
 
 | Field | Value | Where you got it |
 |---|---|---|
-| `sourceRepo` | `../source-repo` | 3.2 |
+| `sourceRepo` | `../source-repo` | [Before you start](../README.md#before-you-start) |
 | `tenantId` | Directory (tenant) ID | [2.1](../02-permissions/README.md#21-register-the-app-and-add-permissions), app Overview |
 | `appId` | Application (client) ID | [2.1](../02-permissions/README.md#21-register-the-app-and-add-permissions), app Overview |
 | `workspace.id` | GUID after `/groups/` in the URL | [1.4](../01-fabric/README.md#14-copy-three-values-from-fabric) |
@@ -47,7 +30,7 @@ Replace each `<...>` value. The build warns about any you miss.
 | `lakehouse.id` | GUID after `/lakehouses/` in the URL | [1.4](../01-fabric/README.md#14-copy-three-values-from-fabric) |
 | `lakehouse.sqlEndpoint` | Host only: `xxxx.datawarehouse.fabric.microsoft.com` | [1.4](../01-fabric/README.md#14-copy-three-values-from-fabric) |
 | **Secret: one of** | **Key Vault (recommended):** `keyVault.uri` = `https://<name>.vault.azure.net/`, and leave `clientSecret` as `""`.<br>**Bypass (not recommended):** leave `keyVault.uri` as it is and put the secret value in `clientSecret`. | [2.2](../02-permissions/README.md#22-store-the-client-secret) |
-| `dataSources` | Which sources to load; see the next table. Set what you don't use to `skip` (the template turns most on). | |
+| `dataSources` | Which sources to load; see the next table. Set what you don't use to `skip` (the template turns most on). | [Before you start](../README.md#before-you-start) |
 
 **`dataSources`**
 
@@ -90,7 +73,7 @@ It also prints the Graph permissions the chosen sources need, so you can check t
 | `lakehouse.name` | `UniversalLake_LH` | You named the Lakehouse differently in 1.3 |
 | `pinnedCommit`, `semanticModels`, `modelSchema` | as shipped | Leave them |
 
-## 3.4 Generate the files to import
+## 3.2 Generate the files to import
 
 ```powershell
 npm run all
