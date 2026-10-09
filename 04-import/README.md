@@ -90,7 +90,8 @@ Before it runs anything, `Lake_Orchestrator` checks these folders. If a source i
 
 ## Re-building later
 
-* **Changed `config.json`** (new source, new secret with the bypass, etc.): `npm run all`, then delete and re-import the notebooks it reports as changed ([same names](#if-the-workspace-already-has-notebooks-with-the-same-names)).
+* **Changed `workspace` or `lakehouse`** (ID, name or SQL endpoint): every notebook and model file now points to the new Lakehouse. `npm run all`, delete **all** the old notebooks (including the `Lake_*` ones, which the change report doesn't list), import everything in `out/notebooks`, then redo this step from 4.2: the new Lakehouse needs `Lake_Init`, the model files and any CSVs.
+* **Changed `config.json`** otherwise (new source, new secret with the bypass, etc.): `npm run all`, then delete and re-import the notebooks it reports as changed ([same names](#if-the-workspace-already-has-notebooks-with-the-same-names)). Re-import the `Lake_*` notebooks too: they aren't in the report but carry your settings.
 * **Only the models changed**: `npm run models`, re-upload `out/models` (4.5), run `Lake_Deploy_Models` (step 7).
 * **Newer source version**: see [Where the notebook code comes from](../README.md#where-the-notebook-code-comes-from).
 
