@@ -104,6 +104,13 @@ try:
             continue
         try:
             df = spark.table(src)
+            # Delta rejects these characters in column names; replace them with '_'.
+            for c in df.columns:
+                clean = c
+                for ch in [' ', ',', ';', '{', '}', '(', ')', '\n', '\t', '=']:
+                    clean = clean.replace(ch, '_')
+                if clean != c:
+                    df = df.withColumnRenamed(c, clean)
             df.write.format('delta').mode('overwrite').option('overwriteSchema', 'true').saveAsTable(dst)
             n = spark.table(dst).count()
             results.append((table, layer, 'promoted', n, version, ''))
