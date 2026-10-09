@@ -69,7 +69,7 @@ Open it > **Run all**. It writes nothing; run it as often as you like, and again
 
 1. Open `UniversalLake_LH`. In the explorer, **Files > universal_lake** (created by 4.3).
 2. Click **…** next to `universal_lake` > **Upload > Upload folder** > select the **`out/models`** folder itself.
-3. If Fabric asks about existing files, choose to overwrite.
+3. Fabric says *The folder "models" already exists* (4.3 created it empty): tick **Overwrite if folder already exists** > **Upload**. Don't upload the files one by one instead; that loses the subfolders.
 4. Check you now have `Files/universal_lake/models/gold_tables.json` and `Files/universal_lake/models/universal/definition.json`.
 
 If you see `Files/universal_lake/universal/...` (no `models` level), you uploaded the folder's contents instead of the folder: delete it and upload again.
