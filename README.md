@@ -57,9 +57,9 @@ Only **Copilot interactions** is required. Turn the others on in `config.json` (
 | **Org data**<br/>`orgData` | Department, job title, country and manager for each person, from Entra ID | Graph `User.Read.All` |
 | **M365 activity**<br/>`m365Activity` | Daily use of Teams, Outlook, Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive and Viva Engage | Graph `Reports.Read.All` |
 | **Agent 365**<br/>`agent365` | Every agent in the tenant, with its publisher, status and owners | Graph `CopilotPackages.Read.All`, `Application.Read.All` (or a CSV export) |
-| **Product feedback**<br/>`productFeedback` | Copilot thumbs up and down, with comments | CSV export |
-| **Agent evaluator**<br/>`agentEvaluator` | Copilot Studio conversation transcripts, from Dataverse | App added as a Dataverse application user |
-| **Consumption**<br/>`consumption` | Copilot Studio and Copilot credits, Azure AI cost and tokens | CSV exports; Azure reader roles for Azure AI |
+| **Product feedback**<br/>`productFeedback` | Copilot thumbs up and down, with comments | CSV from Microsoft 365 admin center > **Health > Product feedback > Export**.<br/>Role: Global Administrator or Reports Reader |
+| **Agent evaluator**<br/>`agentEvaluator` | Copilot Studio conversation transcripts, from Dataverse | No CSV; read directly from Dataverse. A Power Platform Administrator adds the app as an application user with **Bot Transcript Viewer** (Power Platform admin center) |
+| **Consumption**<br/>`consumption` | Copilot Studio and Copilot credits, Azure AI cost and tokens | **Studio credits:** CSV from Power Platform admin center > **Licensing > Copilot Studio**. Role: Power Platform Administrator<br/>**Copilot credits:** CSV from Viva Insights > **Copilot Consumption Dashboard > Export**. Role: Insights Analyst<br/>**Azure AI:** no CSV; the app needs Reader, Cost Management Reader and Monitoring Reader on the subscription |
 
 ## What ends up in the Lakehouse
 
