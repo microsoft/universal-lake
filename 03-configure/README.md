@@ -18,7 +18,7 @@ The steps: finish `config.json` (3.1) and run `npm run all` (3.2). You already h
 
 ### Required: every setup
 
-Check every row below; replace any `<...>` left over. The build warns about any you miss.
+Check every row below; replace any `<...>` left over. The build warns about any you miss. The same guidance is in `config.json` itself as `//` comments next to each setting; they're allowed, so leave them in.
 
 | Field | Value | Where you got it |
 |---|---|---|
@@ -29,14 +29,14 @@ Check every row below; replace any `<...>` left over. The build warns about any 
 | `lakehouse.id` | GUID after `/lakehouses/` in the URL | [1.4](../01-fabric/README.md#14-copy-three-values-from-fabric) |
 | `lakehouse.sqlEndpoint` | Host only: `xxxx.datawarehouse.fabric.microsoft.com` | [1.4](../01-fabric/README.md#14-copy-three-values-from-fabric) |
 | **Secret: one of** | **Key Vault (recommended):** `keyVault.uri` = `https://<name>.vault.azure.net/`, and leave `clientSecret` as `""`.<br>**Bypass (not recommended):** leave `keyVault.uri` as it is and put the secret value in `clientSecret`. | [2.2](../02-permissions/README.md#22-store-the-client-secret) |
-| `dataSources` | Which sources to load; see the next table. Set what you don't use to `skip` (the template turns most on). | [Before you start](../README.md#before-you-start) |
+| `dataSources` | Which sources to load; see the next table. Set what you don't use to `skip`. | [Before you start](../README.md#before-you-start) |
 
 **`dataSources`**
 
 This is your list of what to load. For each source, the build:
 
 * **`api`**: includes the notebook that pulls the data straight from Microsoft (Graph, audit log, Azure, Dataverse) using the app from step 2.
-* **`csv`**: includes the notebook that reads a file you export yourself and upload to the Lakehouse in step 4. Use it when there's no API or you lack the permission.
+* **`csv`**: includes the notebook that reads a file you export yourself. Use it when there's no API or you lack the permission. You only need the file downloaded and saved on your PC now: `Lake_Init` creates its Lakehouse folder in step 4.3 and you upload it in step 4.6.
 * **`skip`**: leaves that source out: no notebook, no tables, and its semantic model isn't built.
 
 It also prints the Graph permissions the chosen sources need, so you can check them against step 2.
@@ -60,7 +60,7 @@ It also prints the Graph permissions the chosen sources need, so you can check t
 |---|---|---|
 | `azure.subscriptionId` | `azureAi` is `api`: the subscription that holds your Azure AI resources | leave `""` |
 | `azure.paygSubscriptions` | Copilot pay-as-you-go is billed to other subscriptions: list their IDs | leave `[]` |
-| `dataverseEnvironments` | `agentEvaluator` is `api`: one `{ "url": "https://<org>.crm.dynamics.com", "name": "..." }` per Copilot Studio environment | delete the sample row (leave `[]`) |
+| `dataverseEnvironments` | `agentEvaluator` is `api`: add one `{ "url": "https://<org>.crm.dynamics.com", "name": "..." }` per Copilot Studio environment (example in the template's comment) | leave `[]` |
 
 ### Optional: defaults are fine
 

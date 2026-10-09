@@ -14,10 +14,28 @@ export function arg(name, fallback) {
   return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
 
+/** Removes // line comments outside strings, so config.json can carry guidance (URLs in strings are kept). */
+export function stripJsonComments(text) {
+  let out = '', inStr = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      out += c;
+      if (c === '\\') out += text[++i] ?? '';
+      else if (c === '"') inStr = false;
+    } else if (c === '"') { inStr = true; out += c; }
+    else if (c === '/' && text[i + 1] === '/') { while (i < text.length && text[i] !== '\n') i++; out += '\n'; }
+    else out += c;
+  }
+  return out;
+}
+
 export function loadUserConfig() {
   const file = resolve(arg('config', join(ROOT, 'config.json')));
   if (!existsSync(file)) throw new Error(`No config at ${file}. Copy config.template.json to config.json and fill it in.`);
-  const cfg = JSON.parse(readFileSync(file, 'utf8'));
+  let cfg;
+  try { cfg = JSON.parse(stripJsonComments(readFileSync(file, 'utf8'))); }
+  catch (e) { throw new Error(`${file} is not valid JSON (check quotes and commas): ${e.message}`); }
   // The build's catalog calls the Copilot interactions source 'core'.
   if (cfg.dataSources && 'copilotInteractions' in cfg.dataSources) {
     cfg.dataSources.core = cfg.dataSources.copilotInteractions;

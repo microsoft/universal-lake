@@ -25,6 +25,33 @@ METADATA = {
     "microsoft": {"language": "python", "language_group": "synapse_pyspark"},
 }
 MARK = re.compile(r"^# %%(?: \[(markdown|parameters)\])?\s*$")
+
+
+def strip_json_comments(text):
+    """Removes // line comments outside strings, so config.json can carry guidance."""
+    out, in_str, i = [], False, 0
+    while i < len(text):
+        c = text[i]
+        if in_str:
+            out.append(c)
+            if c == "\\" and i + 1 < len(text):
+                i += 1
+                out.append(text[i])
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+            out.append(c)
+        elif c == "/" and text[i + 1:i + 2] == "/":
+            while i < len(text) and text[i] != "\n":
+                i += 1
+            out.append("\n")
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
 PARAM = re.compile(r"^([A-Z_][A-Z0-9_]*) = (?:'[^']*'|\d+|True|False)(\s+#.*)?$")
 
 
@@ -134,7 +161,7 @@ if __name__ == "__main__":
     import sys
 
     cfg_path = pathlib.Path(sys.argv[sys.argv.index("--config") + 1]) if "--config" in sys.argv else ROOT / "config.json"
-    cfg = json.loads(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else None
+    cfg = json.loads(strip_json_comments(cfg_path.read_text(encoding="utf-8"))) if cfg_path.exists() else None
     lh = (cfg or {}).get("lakehouse", {})
     ws = (cfg or {}).get("workspace", {})
     bind = cfg and "<" not in str(lh.get("id", "<")) and "<" not in str(ws.get("id", "<"))

@@ -49,9 +49,12 @@ cd UniversalLake
 copy config.template.json config.json
 ```
 
-`config.json` is git-ignored, so your IDs never get committed. There's no `npm install`: the build uses only Node.js and Python.
+`config.json` is git-ignored, so your IDs never get committed. There's no `npm install`: the build uses only Node.js and Python. Each setting has a `//` comment explaining what it is, where to find it and when you can leave it alone. The comments are allowed and you can leave them in (your editor may underline them; that's fine).
 
 **2. Choose your data sources.** Read the [data sources table](#data-sources) and, in `config.json` under `dataSources`, set each one to `api`, `csv` or `skip` ([what these mean](03-configure/README.md#31-finish-configjson)). This decides which permissions the app needs in step 2 and which export files you'll need. Start small if you like: `copilotInteractions` and `orgData` are required, and you can turn others on later.
+
+* **`skip`** leaves the source out, and you can ignore its settings: `azure` is only read when `azureAi` is `api`, and `dataverseEnvironments` only when `agentEvaluator` is `api`.
+* **`csv`**: **download the export now and save it on your PC.** That's all for now: you don't create any folders. `Lake_Init` creates a Lakehouse folder for each source in [step 4.3](04-import/README.md), and you upload the files there in [step 4.6](04-import/README.md#46-upload-csv-exports-only-sources-set-to-csv). Where each export comes from is in the [data sources table](#data-sources). No file yet? Use `skip`, or keep `csv`: the run still finishes, but that source's tables stay empty until you upload.
 
 ## Steps
 

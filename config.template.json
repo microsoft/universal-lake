@@ -1,51 +1,72 @@
+// Universal Lake settings.
+// Copy this file to config.json (git-ignored, so your IDs are never committed) and fill it in.
+// Lines starting with // are guidance; the build ignores them, so you can leave them in.
+// Replace every value shown as <...>. The build (npm run all) warns about any you miss.
+// Field-by-field help: 03-configure/README.md, step 3.1.
 {
-  "$comment": "Copy to config.json (git-ignored) and fill in. Values marked <...> are required. Recommended: keep the client secret in Key Vault and leave clientSecret empty. Bypass (NOT recommended, e.g. a first run with no Key Vault yet): leave keyVault.uri as it is and put the secret in clientSecret; it is then written into the generated notebooks.",
+  // ---------- Required: from step 2 (app registration Overview page) ----------
+  "tenantId": "<tenant-guid>",                      // Directory (tenant) ID
+  "appId": "<app-registration-client-id>",          // Application (client) ID
 
-  "tenantId": "<tenant-guid>",
-  "appId": "<app-registration-client-id>",
+  // ---------- Client secret: pick ONE of the two ways (step 2.2) ----------
+  // Recommended: put the secret in Key Vault, set keyVault.uri, and leave clientSecret as "".
+  // Bypass (not recommended, e.g. a first test with no Key Vault yet): leave keyVault.uri exactly as
+  // it is below and paste the secret value into clientSecret. It is then written into the notebooks.
   "keyVault": {
     "uri": "https://<your-vault>.vault.azure.net/",
-    "secretName": "universal-lake-client-secret"
+    "secretName": "universal-lake-client-secret"     // change only if you named the secret differently
   },
   "clientSecret": "",
 
+  // ---------- Required: from step 1.4 (copy from the Fabric URLs) ----------
   "workspace": { "id": "<fabric-workspace-guid>", "name": "<workspace name>" },
   "lakehouse": {
-    "id": "<lakehouse-guid>",
-    "name": "UniversalLake_LH",
-    "sqlEndpoint": "<xxxx.datawarehouse.fabric.microsoft.com>"
+    "id": "<lakehouse-guid>",                        // GUID after /lakehouses/ in the URL
+    "name": "UniversalLake_LH",                      // any name you like; must match the Lakehouse you created
+    "sqlEndpoint": "<xxxx.datawarehouse.fabric.microsoft.com>"   // host name only, no https://
   },
 
-  "scale": "standard",
-  "backfillDays": 30,
+  // ---------- Defaults are fine ----------
+  "scale": "standard",                               // "large" above ~20,000 Copilot users
+  "backfillDays": 30,                                // days of audit history in the first load (max 180)
 
+  // ---------- What to load ----------
+  // "api"  = pulled straight from Microsoft with the app from step 2.
+  // "csv"  = from an export file you download yourself. You don't upload anything now:
+  //          just download the export and save it on your PC. Lake_Init (step 4.3) creates a
+  //          folder for it in the Lakehouse, and you upload the file there in step 4.6.
+  //          If you can't get the file yet, use "skip" (the run still works; that source stays empty).
+  // "skip" = leave this source out: no notebook, no tables.
   "dataSources": {
-    "copilotInteractions": "api",
-    "orgData": "api",
-    "workday": "skip",
-    "m365Activity": "api",
-    "agent365": "api",
-    "productFeedback": "csv",
-    "studioCredits": "csv",
-    "coworkCredits": "csv",
-    "azureAi": "api",
-    "agentEvaluator": "api"
+    "copilotInteractions": "api",   // required. Copilot prompts and responses, from the audit log
+    "orgData": "api",               // required. Users, departments, managers
+    "m365Activity": "api",          // "api" or "skip". Teams, Outlook, Word, Excel, PowerPoint usage
+    "agent365": "api",              // "api", "csv" or "skip". csv: M365 admin center > Agents > All agents > Export
+    "workday": "skip",              // "csv" or "skip". Only if org data comes from a Workday export
+    "productFeedback": "csv",       // "csv" or "skip". M365 admin center > Health > Product feedback > Export
+    "studioCredits": "csv",         // "csv" or "skip". Power Platform admin center > Licensing > Copilot Studio exports
+    "coworkCredits": "csv",         // "csv" or "skip". Viva Insights > Copilot Consumption Dashboard > Export (both CSVs)
+    "azureAi": "skip",              // "api" or "skip". "api" needs azure.subscriptionId below and the roles in step 2.4
+    "agentEvaluator": "skip"        // "api" or "skip". "api" needs dataverseEnvironments below. There is no csv option
   },
 
+  // ---------- Only if azureAi is "api"; otherwise leave as is ----------
   "azure": {
-    "subscriptionId": "",
-    "paygSubscriptions": []
+    "subscriptionId": "",           // the subscription that holds your Azure AI / Foundry resources
+    "paygSubscriptions": []         // other subscriptions billed for Copilot pay-as-you-go, e.g. ["<sub-id>"]
   },
 
-  "dataverseEnvironments": [
-    { "url": "https://<org>.crm.dynamics.com", "name": "Production" }
-  ],
+  // ---------- Only if agentEvaluator is "api"; otherwise leave [] ----------
+  // One entry per Copilot Studio environment, for example:
+  //   { "url": "https://<org>.crm.dynamics.com", "name": "Production" }
+  "dataverseEnvironments": [],
 
+  // ---------- Leave as shipped ----------
+  // Models for sources you skipped are not built. Lake_Deploy_Models finds models by name; leave id as "".
   "semanticModels": {
     "universal":      { "name": "Universal Lake Model", "id": "" },
     "consumption":    { "name": "Universal Lake Consumption Model", "id": "" },
     "agentEvaluator": { "name": "Universal Lake Agent Evaluator Model", "id": "" }
   },
-
   "modelSchema": "gold"
 }
