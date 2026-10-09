@@ -31,6 +31,8 @@ Good to know:
 
 > **Schemas can't be turned on later.** If you missed the box, delete the Lakehouse and create it again. You'll know it's right when the Lakehouse explorer shows a **`dbo`** folder under *Tables*.
 
+> **Using a Lakehouse you already have?** That works if it shows a `dbo` folder under *Tables*, and it doesn't already hold tables in the `bronze`, `silver`, `gold` or `ops` schemas from another solution (this guide writes there). Copy its values in 1.4 as usual. A Lakehouse without `dbo` can't be used; `Lake_Init` stops with *"This Lakehouse is not schema-enabled"*.
+
 Fabric also creates a **SQL analytics endpoint** with the same name. The semantic models read through it.
 
 ## 1.4 Copy three values from Fabric
