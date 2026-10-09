@@ -1,23 +1,23 @@
 # Universal Data Lake for Microsoft 365 and Copilot data
 
-Build **one Microsoft Fabric Lakehouse** that holds your Microsoft 365 Copilot data, your agent data, and how people use Teams, Outlook, Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive and Viva Engage. The data lands in **bronze, silver and gold** layers, and **semantic models** sit on gold, ready for Power BI, Copilot in Power BI, data agents or your own SQL.
+Build **one Microsoft Fabric Lakehouse** that holds your Microsoft 365 Copilot data, your agent data, and how people use Teams, Outlook, Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive and Viva Engage. The data is cleaned and shaped into report-ready tables, and **semantic models** sit on top, ready for Power BI, Copilot in Power BI, data agents or your own SQL.
 
 You do each step yourself, so when something fails you can see which step, which source and which dates, and re-run just that.
 
 **You end up with**
 
-* a Lakehouse with `bronze`, `silver`, `gold` and `ops` schemas;
-* semantic models on the gold tables, with relationships and measures;
-* a daily refresh, and a log of every step and every date range loaded.
+* one Lakehouse with all the data, refreshed daily;
+* semantic models with relationships and measures, ready to report on;
+* a log of every step and every date range loaded.
 
-**Not included:** reports or a Fabric app. A Fabric app with reports is a separate deployment that can point at this lake.
+**What it opens up.** The lake is the foundation. Once it exists you can connect **Power BI report templates** to its semantic models, and build **Fabric apps** on it, without collecting the data again. Those are separate deployments; this repo builds the lake and the models only.
 
 ```mermaid
 flowchart LR
   S["Data sources<br/>audit log, M365 usage reports,<br/>Entra ID, Agent 365, Dataverse,<br/>credits and cost"] --> N["Ingester notebooks<br/>(step 5)"]
-  N --> L[("One Lakehouse<br/>bronze → silver → gold<br/>(step 6)")]
-  L --> M["Semantic models on gold<br/>(step 7)"]
-  M -.-> U["Reports, apps, agents<br/>(separate)"]
+  N --> L[("One Lakehouse<br/>raw → cleaned → report-ready<br/>(step 6)")]
+  L --> M["Semantic models<br/>(step 7)"]
+  M -.-> U["Power BI templates,<br/>Fabric apps, agents<br/>(later, separate)"]
 ```
 
 ## What you need
@@ -41,7 +41,7 @@ Do them in order. Each folder's README has the exact clicks.
 | [3. Configure](03-configure/README.md) | Fill in `config.json`, run `npm run all` to generate the notebooks and model files | Your PC |
 | [4. Import](04-import/README.md) | Import the notebooks, run `Lake_Init` and `Lake_Validate_Credentials`, upload the model files | Fabric |
 | [5. Ingest](05-ingest/README.md) | Run `Lake_Orchestrator` once with `first_load`: all ingesters, the first backfill, processing and promote | Fabric |
-| [6. Process](06-process/README.md) | Check what the processor and promote did (bronze, silver, gold) | Fabric |
+| [6. Process](06-process/README.md) | Check that the data was cleaned and sorted into report-ready tables | Fabric |
 | [7. Semantic models](07-semantic-model/README.md) | Create, connect and refresh the models | Fabric |
 | [8. Orchestrate](08-orchestrate/README.md) | Schedule the daily run, [re-run only what failed](08-orchestrate/RERUNS.md) | Fabric |
 
@@ -49,27 +49,29 @@ Do them in order. Each folder's README has the exact clicks.
 
 ## Data sources
 
-Only `copilotInteractions` is required. Turn the others on in `config.json` (step 3); you can add them later.
+Only **Copilot interactions** is required. Turn the others on in `config.json` (step 3), now or later. The tables each one creates are listed in [step 6](06-process/README.md).
 
-| Module | Data | Gold table(s) | Needs |
-|---|---|---|---|
-| `copilotInteractions` | Every Copilot prompt and agent run (Purview audit log); who has a Copilot licence | `copilot_interactions_curated`, `copilot_licensed_users` | Graph `AuditLogsQuery.Read.All`, `Reports.Read.All` |
-| `orgData` | Department, job title, country, manager (Entra ID) | `copilot_org_data` | Graph `User.Read.All` |
-| `m365Activity` | Daily use of Teams, Outlook, Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive, Viva Engage | `m365_activity_daily` | Graph `Reports.Read.All` |
-| `agent365` | Agents in the tenant: publisher, status, owners | `agents_365` | Graph `CopilotPackages.Read.All`, `Application.Read.All`, or a CSV export |
-| `productFeedback` | Copilot thumbs up/down and comments | `user_feedback` | CSV export |
-| `agentEvaluator` | Copilot Studio transcripts (Dataverse) | `agent_sessions`, `agent_turns`, … | App added as a Dataverse application user |
-| `consumption` | Copilot Studio and Copilot credits, Azure AI cost and tokens | `studio_*`, `viva_*`, `azure_*` | CSV exports; Azure reader roles for Azure AI |
+| Source (`config.json` name) | What you get | Needs |
+|---|---|---|
+| **Copilot interactions**<br/>`copilotInteractions` | Every Copilot prompt and agent run, from the Purview audit log, plus who has a Copilot licence | Graph `AuditLogsQuery.Read.All`, `Reports.Read.All` |
+| **Org data**<br/>`orgData` | Department, job title, country and manager for each person, from Entra ID | Graph `User.Read.All` |
+| **M365 activity**<br/>`m365Activity` | Daily use of Teams, Outlook, Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive and Viva Engage | Graph `Reports.Read.All` |
+| **Agent 365**<br/>`agent365` | Every agent in the tenant, with its publisher, status and owners | Graph `CopilotPackages.Read.All`, `Application.Read.All` (or a CSV export) |
+| **Product feedback**<br/>`productFeedback` | Copilot thumbs up and down, with comments | CSV export |
+| **Agent evaluator**<br/>`agentEvaluator` | Copilot Studio conversation transcripts, from Dataverse | App added as a Dataverse application user |
+| **Consumption**<br/>`consumption` | Copilot Studio and Copilot credits, Azure AI cost and tokens | CSV exports; Azure reader roles for Azure AI |
 
 ## What ends up in the Lakehouse
 
-| Schema | Contents |
-|---|---|
-| `dbo` | The ingesters' working tables. Leave them alone; each daily load reads its own previous output. |
-| `bronze` | Raw extracts and logs |
-| `silver` | Cleaned and history tables no model reads |
-| `gold` | Exactly the tables the semantic models read |
-| `ops` | Settings, run log, backfill ledger, which layer each table went to |
+You don't need to know these to use the lake, but you'll see them as folders (schemas) in the Lakehouse. Data moves left to right: raw, then cleaned, then report-ready.
+
+| Folder | What's in it | Do you use it? |
+|---|---|---|
+| `gold` | The report-ready tables. The semantic models read only these. | **Yes.** Point reports, apps and SQL here. |
+| `silver` | Cleaned data and history the models don't read | Rarely |
+| `bronze` | Raw data as it arrived, and logs | Only to troubleshoot |
+| `ops` | Settings, the run log, and which dates have been loaded | To check runs |
+| `dbo` | The notebooks' working tables | No. Leave them alone; each daily load reads its own previous output. |
 
 ## How the ingesters work
 
