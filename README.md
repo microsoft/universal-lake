@@ -49,7 +49,7 @@ cd UniversalLake
 copy config.template.json config.json
 ```
 
-`config.json` is git-ignored, so your IDs never get committed. There's no `npm install`: the build uses only Node.js and Python. Each setting has a `//` comment explaining what it is, where to find it and when you can leave it alone. The comments are allowed and you can leave them in (your editor may underline them; that's fine).
+`config.json` is git-ignored, so your IDs never get committed. There's no `npm install`: the build uses only Node.js and Python. If `npm` is blocked on your PC (e.g. a Microsoft-managed device), see [If `npm run all` doesn't work](03-configure/README.md#if-npm-run-all-doesnt-work). Each setting has a `//` comment explaining what it is, where to find it and when you can leave it alone. The comments are allowed and you can leave them in (your editor may underline them; that's fine).
 
 **2. Choose your data sources.** Read the [data sources table](#data-sources) and, in `config.json` under `dataSources`, set each one to `api`, `csv` or `skip` ([what these mean](03-configure/README.md#31-finish-configjson)). This decides which permissions the app needs in step 2 and which export files you'll need. Start small if you like: `copilotInteractions` and `orgData` are required, and you can turn others on later.
 

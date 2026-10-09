@@ -92,6 +92,26 @@ This only writes files on your PC. It picks the notebooks your `dataSources` nee
 * *"notebooks are unbound"* means `workspace.id` or `lakehouse.id` is missing.
 * With the bypass, it warns that the secret was written into `out/notebooks`. That's expected; don't share that folder.
 
-(`npm` is just the script runner here. `npm run all` = `check`, `sync`, `models`, `notebooks`; each can be run on its own.)
+(`npm` is just the script runner here. `npm run all` = `sync`, `models`, `notebooks`; each can be run on its own, e.g. `npm run models`.)
+
+### If `npm run all` doesn't work
+
+The build downloads no packages, so `npm` is only a shortcut. If `npm` fails or is blocked (common on managed corporate PCs), run the three commands it stands for, from the repo folder:
+
+```powershell
+node scripts/sync_notebooks.mjs
+node scripts/build_models.mjs
+python scripts/build_ipynb.py
+```
+
+The result is the same `out/` folder.
+
+**On a Microsoft-managed PC**, the public npm registry is blocked. If `npm` reports a registry, authentication or `E403`/`ETIMEDOUT` error, point it at the internal feed proxy once, then retry:
+
+```powershell
+npm config set registry https://packagefeedproxy.microsoft.io/npm
+```
+
+(See [packagefeedproxy.microsoft.io/npm](https://packagefeedproxy.microsoft.io/npm) for sign-in details. Or skip `npm` and use the three commands above.)
 
 Next: [Step 4: Import into Fabric](../04-import/README.md)
