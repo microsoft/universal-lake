@@ -11,7 +11,19 @@ Order matters: `Lake_Init` (4.3) creates the Lakehouse folders that 4.5 and 4.6 
    *Not* the copies in this repo's numbered folders: those have no Lakehouse attached and no values filled in.
 3. Wait until they all show in the workspace (about 20, depending on your sources; `out/notebooks/MANIFEST.json` lists them).
 
-> **Don't rename notebooks.** They call each other by name. When re-importing, **delete the old notebook first**: Fabric doesn't overwrite, it imports a copy named `lake_ops 1`, and the old one keeps being used.
+> **Don't rename notebooks.** They call each other by name, so each name can exist only once in the workspace.
+
+### If the workspace already has notebooks with the same names
+
+Fabric doesn't overwrite on import. It adds a copy named, for example, `lake_ops 1`, and the other notebooks keep calling the old one. First work out where the existing ones came from:
+
+| The existing notebooks are | Do this |
+|---|---|
+| **From an earlier run of this guide** (same Lakehouse) | Delete them, then import. Your data is safe: it lives in the Lakehouse, not in the notebooks. Delete any `... 1` copies too. |
+| **From another solution** (for example a Copilot analytics app or another lake that uses the same notebook names) | **Don't delete them**: that solution would stop working. Use a **new, empty workspace** for this lake instead: go back to [step 1](../01-fabric/README.md), create the workspace and Lakehouse, update `workspace` and `lakehouse` in `config.json`, run `npm run all` again, and import there. |
+| **Unsure** | Open one and check **Explorer > Lakehouses**. If it's attached to a different Lakehouse, treat it as another solution and use a new workspace. |
+
+To delete: in the workspace list, select the notebooks (tick boxes) > **Delete**. After importing, check that no names end in ` 1`.
 
 ## 4.2 Check the Lakehouse is attached
 
@@ -78,7 +90,7 @@ Before it runs anything, `Lake_Orchestrator` checks these folders. If a source i
 
 ## Re-building later
 
-* **Changed `config.json`** (new source, new secret with the bypass, etc.): `npm run all`, then delete and re-import the notebooks it reports as changed.
+* **Changed `config.json`** (new source, new secret with the bypass, etc.): `npm run all`, then delete and re-import the notebooks it reports as changed ([same names](#if-the-workspace-already-has-notebooks-with-the-same-names)).
 * **Only the models changed**: `npm run models`, re-upload `out/models` (4.5), run `Lake_Deploy_Models` (step 7).
 * **Newer source version**: see [Where the notebook code comes from](../README.md#where-the-notebook-code-comes-from).
 
