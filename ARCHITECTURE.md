@@ -1,73 +1,95 @@
 # How the ingesters work
 
-The ingesters don't loop over records one at a time, building rows in Python or Power Query. Each one does two separate jobs:
+Every ingester does two jobs, one after the other:
 
-1. **Fetch.** Pull raw API responses quickly, in parallel, and save them somewhere so a failure doesn't lose work.
-2. **Shape.** Hand the raw data to Spark in one go and let it parse, flatten and write Delta in parallel across the cluster.
+1. **Collect.** Ask Microsoft's APIs for the data, several requests at a time, and save each answer to the Lakehouse as soon as it arrives.
+2. **Shape.** Hand all the saved data to Spark in one go. Spark unpacks it, turns it into tables and writes them, using every core in the cluster at once.
+
+Keeping the two apart means a slow or failed request never loses work that already finished. It also means the heavy unpacking happens once, in Spark, instead of inside a Power BI refresh.
 
 ```mermaid
 flowchart LR
-    subgraph Fetch["Fetch: many API calls at once"]
-        G[Microsoft Graph / Purview<br/>Dataverse / CSV] -->|concurrent threads,<br/>throttling-aware| S[(Files/_audit_staging<br/>one JSONL per window<br/>+ manifest)]
+    subgraph Collect["1. Collect"]
+        A[Purview audit log<br/>Microsoft Graph reports<br/>Dataverse, CSV files] -->|a few requests at a time,<br/>slowing down when asked| S[(Saved answers<br/>Files/_audit_staging)]
     end
-    subgraph Shape["Shape: one Spark job"]
-        S -->|spark.read.json<br/>all files at once| R[raw DataFrame]
-        R -->|from_json with a fixed schema| P[typed columns]
-        P -->|posexplode_outer<br/>messages × resources| X[one row per<br/>prompt × resource]
+    subgraph Shape["2. Shape (Spark)"]
+        S -->|read all files at once| R[raw records]
+        R -->|unpack nested JSON| X[one row per prompt<br/>and file it used]
     end
-    X -->|MERGE on Id<br/>or overwrite| D[(Delta table in dbo)]
-    D --> PR[Processor:<br/>broadcast joins,<br/>enrichment, V-Order] --> GOLD[(gold)]
+    X -->|add new rows,<br/>update changed ones| D[(Delta tables)]
+    D --> P[Processor:<br/>adds user and agent details] --> G[(gold)]
 ```
 
-## 1. Fetching: parallel, throttling-aware, resumable
+## Collecting Copilot interactions from Purview
 
-| Ingester | How it fetches in parallel |
+Copilot interactions come from the Microsoft Purview audit log, through the Microsoft Graph [audit log query API](https://learn.microsoft.com/graph/api/resources/security-auditlogquery). Purview is built to serve a whole organisation fairly, so it has limits. At the scale of a large tenant, those limits are what you notice first.
+
+### What you run into
+
+| What Purview does | What it means for you |
 |---|---|
-| **Audit log** (Copilot interactions) | Splits the backfill into time windows (1 day on `standard`, 2 hours on `large`) and runs **up to 5 Purview audit queries at once**. Purview allows about 10 per tenant, so there's room left for other admins. |
-| **M365 activity** | For each day, pulls the 6 usage reports (Teams, Outlook, SharePoint, OneDrive, Viva Engage, apps) **3 at a time**. |
-| **Agent 365 registry** | Fetches agent details with **8 parallel workers**. It looks up owners with Graph **`$batch`** (20 users per request) instead of one call each. |
-| **Org data, licensed users** | Follows `@odata.nextLink` paging. Each is one fast list, so there's nothing worth parallelising. |
+| **A search is a job, not an instant answer.** You submit a query, Purview runs it in the background, and you check back until it's done. | A single day of Copilot activity in a large tenant can take minutes to an hour or more before any records are ready. |
+| **Only a handful of searches run at once per tenant** (about 10). | You can't ask for 30 days at once and get 30 answers in parallel. Other admins running audit searches share the same allowance. |
+| **Very busy time ranges can fail.** A query that covers too many records may end as *failed* or take too long. | In a large tenant, a full day can be too much for one query. |
+| **Requests are rate-limited.** Too many calls in a short time get an *HTTP 429: try again later*. | Pushing harder makes things slower, not faster. |
+| **Records can arrive late.** Some events reach the audit log hours after they happened. | Yesterday's numbers can still grow today. |
+| **History is kept for 180 days** (standard audit). | A first load can go back at most 180 days. |
+| **Results come back in pages** of up to 999 records. | A busy day can mean hundreds of pages to read. |
 
-Features shared by every fetch:
+### How the audit ingester works within these limits
 
-* **Throttling handled for you.** HTTP 429 and 5xx responses are retried with exponential backoff, honouring `Retry-After`. In the audit ingester, every 429 also **lowers the number of queries run at once** for the rest of the run, so it slows down instead of failing.
-* **Self-healing windows.** An audit window that keeps failing or timing out is **split in half**, down to 1 hour, and the halves are queried instead. One bad hour doesn't block a 30-day backfill.
-* **Resumable.** Each finished audit window is written to `Files/_audit_staging` as its own JSONL file and recorded in a manifest. A rerun (or an [automatic resume](05-ingest/README.md#the-audit-backfill-what-to-expect)) skips finished windows, and later daily runs read only their own windows.
-* **Large lookups are saved as they go.** The registry ingester saves fetched details to `agents_365_detail_cache` every 1,000 agents, so an interruption costs minutes, not the whole run.
+* **It splits the history into time windows.** A 30-day first load is 30 one-day queries (`scale: standard`), or 360 two-hour queries (`scale: large`). Smaller windows finish more reliably in busy tenants.
+* **It runs up to 5 queries at once.** That's half the tenant's allowance, so other admins' audit searches still have room.
+* **It slows down when Purview asks it to.** When it gets an *HTTP 429*, it waits as long as Purview says before trying again, and runs fewer queries at once for the rest of the run.
+* **It retries a failed window with a smaller one.** If a window keeps failing, it is split in half (for example 2 hours into two 1-hour windows) and both halves are asked for instead. No time range is skipped: if even a 1-hour window can't be read, the run stops and tells you, so the data never has a silent hole.
+* **It saves each window as soon as it's done.** Every finished window is saved as its own file in `Files/_audit_staging`, with a list of what's finished. If the notebook stops (a time limit, a capacity pause, a closed browser), the next run picks up where it left off. Queries that were still running in Purview are checked again, not sent a second time.
+* **It runs in sessions and resumes on its own.** A long first load stops after 90 minutes (`standard`) or 5 hours (`large`) and is marked *paused*. The orchestrator then [resumes it automatically](05-ingest/README.md#the-audit-backfill-what-to-expect), up to 8 times.
+* **It re-reads recent days.** Each daily run asks again for the last few days (7 on `standard`, 3 on `large`) to pick up late records. Rows already in the table are updated, not duplicated.
+* **It won't go back further than 180 days**, and checks this before it starts.
 
-## 2. Shaping: column-wise in Spark, not row by row
+## Collecting the other sources
 
-The Copilot audit record is deeply nested JSON. One interaction holds an array of messages, and each message can touch an array of resources (files, sites, plugins). The older Power BI approach expanded this in Power Query (`Json.Document` → `ExpandListColumn` → `ExpandRecordColumn`). That ran one row at a time inside the refresh, and was the step that stopped the refresh from being pushed down to the source.
+| Source | How it collects |
+|---|---|
+| **M365 activity** (Teams, Outlook, Word, Excel, PowerPoint, SharePoint, OneDrive) | For each day, it asks for the 6 Microsoft 365 usage reports, 3 at a time. Microsoft fills these reports in late, so it re-reads the last 4 days every run. |
+| **Agent 365 registry** | Fetches agent details 8 at a time. It looks up agent owners 20 per request, instead of one request per person. It saves its progress every 1,000 agents. |
+| **Org data, licensed users** | One list each, read page by page. They're quick, so they don't need anything more. |
 
-The ingesters do it in Spark instead:
+Every API call retries short outages (*HTTP 500–504*) and rate limits (*HTTP 429*) on its own, waiting a little longer each time.
 
-* **One read for everything.** `spark.read.json(files)` loads all the staged windows as a single DataFrame, spread over the cluster's cores.
-* **A fixed schema, applied column-wise.** `from_json(AuditData, audit_schema)` parses every record's JSON against a declared `StructType` in one vectorised pass. There's no schema guessing, and malformed or empty records are filtered out, not crashed on.
-* **Explosion instead of nested loops.** `posexplode_outer` turns the `Messages` array, then the `Resources` array, into rows across all partitions at once. The `_outer` keeps interactions that have no messages or resources (left-join semantics). The position it returns becomes `Message_Ordinal` and `Resource_Ordinal`, so every row has a **stable, reproducible key**.
-* **Deterministic IDs.** Row keys are hashes of the canonicalised JSON (keys sorted, whitespace normalised). The same record always gets the same `Id`, whichever window or rerun delivered it, so `dropDuplicates(['Id'])` and the Delta `MERGE` remove overlaps between windows.
+## Shaping the data in Spark
 
-## 3. Writing Delta: idempotent and incremental
+A Copilot audit record is nested: one interaction holds a list of messages, and each message can hold a list of files, sites or plugins it used. The older Power BI approach unpacked this inside the report's refresh, one record at a time, and that was the slowest part of every refresh.
 
-* **MERGE on a stable key.** Daily runs `MERGE` on `Id` (`whenMatchedUpdateAll` / `whenNotMatchedInsertAll`), so a rerun or an overlapping window updates rows instead of duplicating them. Backfills use `overwrite`.
-* **Day-level replace.** M365 activity writes each day with `replaceWhere ActivityDate = <day>`. Microsoft's reports fill in late, so it re-reads the last 4 days and swaps just those day slices, without touching the rest of the table.
-* **Schema evolution.** `mergeSchema` / `schema.autoMerge` let new optional columns from Microsoft land without breaking the table.
+Here Spark does it instead, once, when the data lands:
 
-## 4. Processing: enrichment in Spark, not in the model
+* **Everything is read in one go.** All the saved windows are loaded together and spread across the cluster's cores, so 30 days take about as long to unpack as a few.
+* **A fixed layout.** Each record is read against a known list of fields and types. Spark doesn't have to guess the structure, and empty or broken records are dropped rather than stopping the run.
+* **Lists become rows across the whole table at once.** Spark turns each message, and then each file or site it used, into its own row, for every record in parallel, rather than looping through them. Interactions with no messages or files are kept.
+* **Every row gets a fixed ID.** The ID is calculated from the record's content, so the same record always gets the same ID, no matter which run or window brought it in. That's what lets overlapping windows and re-runs update rows instead of creating duplicates.
 
-The processor turns `Copilot_Interactions_Parsed` into the curated fact table that the models read:
+## Writing the tables
 
-* **Broadcast joins.** Small dimensions (licensed users, agent registry, agent links, user-month lookups) are `broadcast` to every executor. The large fact table is never shuffled to join them.
-* **Former DAX columns computed once.** About 30 behaviour columns that the Power BI template used to compute as DAX calculated columns at every refresh are computed once in Spark. The fact table imports with **no calculated columns**, so refreshes stay fast and the model can use Direct Lake.
-* **`OPTIMIZE … VORDER`.** It compacts small files and applies V-Order, the column layout that Power BI's engine reads fastest, for both import and Direct Lake.
+* **New rows are added, changed rows updated.** Daily runs match rows on their ID, so running the same day twice changes nothing.
+* **Only the affected days are replaced.** M365 activity swaps out just the days it re-read and leaves the rest of the table alone.
+* **New fields don't break anything.** If Microsoft adds an optional field, it becomes a new column.
 
-## Why this matters
+## Processing into gold
 
-| | Row-by-row (Power Query / Python loops) | These ingesters |
+The processor builds the table that the semantic models read:
+
+* **Small lookup tables go to every worker.** Licensed users and the agent registry are small, so a copy is sent to every Spark worker. The large interactions table never has to be moved around to match them up.
+* **Columns are calculated once.** About 30 columns that the Power BI template used to calculate at every refresh are calculated here, once. The model just loads them, so refreshes are faster.
+* **Files are tidied for Power BI.** Small files are combined and stored in the column order Power BI reads fastest (*V-Order*).
+
+## In short
+
+| | The older way (Power BI refresh, one record at a time) | These ingesters |
 |---|---|---|
-| API calls | One at a time | Several at once, backing off when throttled |
-| A failure at hour 3 of a backfill | Start over | Resume from the last finished window |
-| Nested JSON | Expanded row by row during refresh | Parsed and exploded column-wise across the cluster |
-| Reruns and overlaps | Duplicates or a full reload | Deterministic keys, `MERGE` / `replaceWhere` |
-| Model refresh | Recomputes calculated columns | Reads ready-made, V-Ordered gold tables |
+| Asking Purview | One query at a time | A few at a time, slowing down when Purview asks |
+| A failure 3 hours into a first load | Start again | Carry on from the last finished window |
+| Nested records | Unpacked during every refresh | Unpacked once, in parallel |
+| Re-runs and overlapping days | Duplicates or a full reload | Rows updated in place |
+| Report refresh | Recalculates columns every time | Loads finished gold tables |
 
 Next: [the steps](README.md#steps)

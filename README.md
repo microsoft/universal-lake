@@ -73,7 +73,7 @@ Only `copilotInteractions` is required. Turn the others on in `config.json` (ste
 
 ## How the ingesters work
 
-They fetch from Microsoft in parallel (several Purview audit queries and Graph reports at once, backing off when throttled) and save each finished window, so a failed run resumes instead of starting over. Spark then parses and flattens the nested JSON column-wise across the cluster, not row by row, and writes Delta with `MERGE` on stable keys, so reruns never duplicate. Details: [ARCHITECTURE.md](ARCHITECTURE.md).
+They ask Microsoft's APIs for data a few requests at a time, stay within Purview's audit search limits, and save each finished piece, so a stopped run carries on where it left off. Spark then unpacks all the nested records at once across the cluster and updates the tables in place, so re-runs never create duplicates. Details: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Where the notebook code comes from
 
