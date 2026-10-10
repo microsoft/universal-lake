@@ -19,7 +19,7 @@ Replace any `<...>` left over. The same guidance is in `config.json` itself as `
 |---|---|---|
 | `tenantId` | Directory (tenant) ID | [2.1](../02-permissions/README.md#21-register-the-app-and-add-permissions), app Overview |
 | `appId` | Application (client) ID | [2.1](../02-permissions/README.md#21-register-the-app-and-add-permissions), app Overview |
-| `fabricTenantId` | Leave `""`. Only if your Fabric workspace is in a different tenant from the app and data (for example, the data is in a demo tenant): the Fabric tenant's ID or domain, e.g. `contoso.com`. Deploy signs you in there. | Fabric portal > **?** > **About** > *Tenant URL* or ID |
+| `fabricTenantId` | Leave `""`. Deploy asks whether your Fabric workspace is in the same tenant as the app and fills this in. If it isn't (for example, the data is in a demo tenant), you enter the Fabric tenant's ID or a domain you sign in with, e.g. `contoso.com`. | Fabric portal > **?** > **About** > *Tenant URL* or ID |
 | `workspace.name` | The workspace name | [1.2](../01-fabric/README.md#12-create-the-workspace) |
 | **Secret: one of** | **Key Vault (recommended):** `keyVault.uri` = `https://<name>.vault.azure.net/`, and leave `clientSecret` as `""`.<br>**Bypass (not recommended):** leave `keyVault.uri` as it is and put the secret value in `clientSecret`. | [2.2](../02-permissions/README.md#22-store-the-client-secret) |
 | `dataSources` | `api`, `csv` or `skip` for each source; see below | [Before you start](../README.md#before-you-start) |

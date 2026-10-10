@@ -22,6 +22,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { createInterface } from 'node:readline';
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { OUT, ROOT, arg, isSet, stripJsonComments } from './lib.mjs';
 import { DATA_SOURCES, UPLOAD_DIR, UPLOAD_KINDS, normHeader } from './build/uploads.js';
@@ -123,8 +124,8 @@ function build() {
 
 // ---------- Sign-in (browser with PKCE, or device code) ----------
 
-// You sign in to the tenant that holds the Fabric workspace. That is the app's tenant unless fabricTenantId says otherwise.
-const tenant = filled(cfg.fabricTenantId) ? cfg.fabricTenantId : cfg.tenantId;
+// You sign in to the tenant that holds the Fabric workspace. confirmFabricTenant() asks once and saves it as fabricTenantId.
+let tenant = filled(cfg.fabricTenantId) ? cfg.fabricTenantId : cfg.tenantId;
 const tokenUrl = () => `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`;
 const SCOPE_FABRIC = 'https://api.fabric.microsoft.com/.default offline_access';
 const SCOPE_STORAGE = 'https://storage.azure.com/.default offline_access';
@@ -183,9 +184,40 @@ async function signInDeviceCode() {
   }
 }
 
+/** Asks once whether Fabric is in the app's tenant, and saves the answer as fabricTenantId so it isn't asked again. */
+async function confirmFabricTenant() {
+  if (filled(cfg.fabricTenantId) || !filled(cfg.tenantId)) return;
+  if (!process.stdin.isTTY) {
+    console.log(`Signing in to tenant ${cfg.tenantId} (the app's). If Fabric is in another tenant, set fabricTenantId in config.json.`);
+    return;
+  }
+  const rl = createInterface({ input: process.stdin });
+  const lines = rl[Symbol.asyncIterator]();
+  const ask = async (q) => { process.stdout.write(q); const r = await lines.next(); return r.done ? null : r.value.trim(); };
+  console.log(`\nYour app registration (and the data it reads) is in tenant ${cfg.tenantId}.`);
+  const same = await ask('Is your Fabric workspace in this same tenant? [Y/n] ');
+  let value = cfg.tenantId;
+  if (same?.toLowerCase().startsWith('n')) {
+    console.log('Enter the Fabric tenant: its ID, or a domain you sign in with, e.g. contoso.com.');
+    console.log('(Fabric portal > ? > About shows the tenant.)');
+    do { value = await ask('Fabric tenant: '); } while (value === '');
+  }
+  rl.close();
+  if (!value) fail('No Fabric tenant entered. Set fabricTenantId in config.json, or run deploy again.');
+  tenant = value;
+  const re = /("fabricTenantId"\s*:\s*)"[^"]*"/;
+  const appLine = /("appId"\s*:\s*"[^"]*",[^\r\n]*)(\r?\n)/;
+  if (re.test(configText)) configText = configText.replace(re, `$1${JSON.stringify(value)}`);
+  else if (appLine.test(configText)) configText = configText.replace(appLine, `$1$2  "fabricTenantId": ${JSON.stringify(value)},$2`);
+  else { console.log(`Could not save this in config.json. Add "fabricTenantId": ${JSON.stringify(value)} to skip this question.`); return; }
+  writeFileSync(configFile, configText);
+  console.log(`Saved fabricTenantId = ${value} in config.json; you won't be asked again.`);
+}
+
 let fabricToken, storageToken;
 async function signIn() {
   if (!filled(tenant)) fail('tenantId is not set in config.json (step 2).');
+  await confirmFabricTenant();
   const t = FLAGS.has('--device-code') ? await signInDeviceCode() : await signInBrowser();
   fabricToken = t.access_token;
   storageToken = (await tokenRequest({ grant_type: 'refresh_token', refresh_token: t.refresh_token, scope: SCOPE_STORAGE })).access_token;
@@ -395,7 +427,7 @@ if (DRY_RUN) {
   console.log('Dry run: nothing is sent to Fabric.\n');
   console.log(`Workspace: ${filled(ws.id) ? ws.id : filled(ws.name) ? `"${ws.name}" (found by name)` : 'NOT SET: set workspace.name'}`);
   console.log(`Lakehouse: ${cfg.lakehouse?.name || 'UniversalLake_LH'}${filled(cfg.lakehouse?.id) ? ` (${cfg.lakehouse.id})` : ' (created if it does not exist)'}`);
-  console.log(`Sign-in:   tenant ${filled(tenant) ? tenant : 'NOT SET: set tenantId'}${filled(cfg.fabricTenantId) ? ' (fabricTenantId; the app and data stay in ' + cfg.tenantId + ')' : ''}`);
+  console.log(`Sign-in:   tenant ${filled(tenant) ? tenant : 'NOT SET: set tenantId'}${!filled(cfg.fabricTenantId) ? " (deploy asks you to confirm it's also the Fabric tenant)" : cfg.fabricTenantId !== cfg.tenantId ? ' (fabricTenantId; the app and data stay in ' + cfg.tenantId + ')' : ''}`);
   printExports(report);
   console.log('\nRun npm run deploy (without --dry-run) to deploy.');
   process.exit(0);
