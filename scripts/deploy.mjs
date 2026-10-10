@@ -3,6 +3,8 @@
 //   npm run deploy                     sign in, then do steps 1-6 below
 //   npm run deploy -- --dry-run        check config.json and your exports folder only (no sign-in, nothing sent)
 //   npm run deploy -- --run first_load also start Lake_Orchestrator's first load when setup passes, and say when it ends
+//   npm run deploy -- --rerun-failed   deploy, then re-run only the steps of the last run that did not succeed, and say
+//                                      when it ends (--run-id <run_id> picks an older run)
 //   npm run deploy -- --watch          only follow the latest Lake_Orchestrator run and say when it ends (deploys nothing)
 //   npm run deploy -- --device-code    sign in with a code instead of a browser window
 //   npm run deploy -- --reupload-csv   upload CSVs again even if this Lakehouse already has them
@@ -31,6 +33,7 @@ import { DATA_SOURCES, UPLOAD_DIR, UPLOAD_KINDS, normHeader } from './build/uplo
 const FLAGS = new Set(process.argv.slice(2));
 const DRY_RUN = FLAGS.has('--dry-run');
 const RUN = arg('run', '');
+const RERUN_FAILED = FLAGS.has('--rerun-failed');
 const CLIENT_ID = '04b07795-8ddb-461a-bbee-02f9e1bf7b46';
 const FABRIC = 'https://api.fabric.microsoft.com/v1';
 const ONELAKE = 'https://onelake.dfs.fabric.microsoft.com';
@@ -444,13 +447,27 @@ const clock = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute:
 // Lake_Orchestrator writes this file when it starts and when it ends, with each failed step's error.
 const RUN_STATUS = 'Files/universal_lake/runs/latest.json';
 async function readRunStatus(ws, lhId, job) {
+  const st = await readLatestStatus(ws, lhId);
+  const jobStart = Date.parse(job.startTimeUtc ?? '');
+  return st && jobStart && Date.parse(st.started) < jobStart - 10 * 60_000 ? null : st; // from an earlier run
+}
+
+function printNextSteps(mode) {
+  if (mode === 'incremental') {
+    console.log('Nothing else to do. If the daily run is not scheduled yet: Lake_Orchestrator > Run > Schedule (step 7).');
+    return;
+  }
+  console.log('\nNext:');
+  console.log('  1. Check the data and the models: step 6 (06-models/README.md).');
+  console.log("  2. Set up the daily run: open Lake_Orchestrator, set RUN_MODE = 'incremental' (RUN_ID blank, RERUN_FAILED = False),");
+  console.log('     Save, then Run > Schedule > once a day. Step 7 (07-orchestrate/README.md).');
+}
+
+async function readLatestStatus(ws, lhId) {
   try {
     await renewTokens();
     const res = await fetch(`${ONELAKE}/${ws.id}/${lhId}/${RUN_STATUS}`, { headers: { Authorization: `Bearer ${storageToken}`, 'x-ms-version': '2023-11-03' } });
-    if (!res.ok) return null;
-    const st = await res.json();
-    const jobStart = Date.parse(job.startTimeUtc ?? '');
-    return jobStart && Date.parse(st.started) < jobStart - 10 * 60_000 ? null : st; // from an earlier run
+    return res.ok ? await res.json() : null;
   } catch { return null; }
 }
 
@@ -479,15 +496,18 @@ async function watchOrchestrator(ws, lhId, id, location) {
   const total = duration(job, started);
   process.stdout.write('\x07');
   if (job.status === 'Completed') {
+    const st = await readRunStatus(ws, lhId, job);
     console.log(`\nLake_Orchestrator finished after ${total}: every step succeeded and the semantic models are refreshed.`);
-    console.log('Next: step 6, check the data (06-models/README.md).');
+    for (const w of st?.warnings ?? []) console.log(`WARNING: ${w}`);
+    printNextSteps(st?.run_mode);
   } else {
     const st = await readRunStatus(ws, lhId, job);
     console.log(`\nLake_Orchestrator ${job.status === 'Failed' ? 'failed' : `ended as ${job.status}`} after ${total}.`);
     if (st?.failed?.length) {
       console.log(`${st.failed.length} step(s) did not succeed (run_id ${st.run_id}):`);
       for (const f of st.failed) console.log(`  ${f.step}: ${f.status}${f.error ? `: ${f.error.replace(/\s+/g, ' ').slice(0, 400)}` : ''}`);
-      console.log(`To re-run only those, open Lake_Orchestrator, set ${st.rerun} in the first cell and Run all.`);
+      console.log('To re-run only those, fix the cause, then run npm run deploy -- --rerun-failed');
+      console.log(`(or open Lake_Orchestrator, set ${st.rerun} in the first cell and Run all).`);
     } else {
       if (job.failureReason?.message) console.log(`Fabric says: ${job.failureReason.message.slice(0, 600)}`);
       if (st?.status === 'running') console.log('It stopped before or between steps (in one of its own cells), not in an ingest step.');
@@ -535,6 +555,23 @@ console.log(`Workspace ${ws.displayName} found.`);
 const lh = await findOrCreateLakehouse(ws);
 writeBack(ws, lh);
 
+let rerun = null;
+if (RERUN_FAILED) {
+  const st = await readLatestStatus(ws, lh.id);
+  const runId = arg('run-id', '') || st?.run_id;
+  if (!runId) fail('No Lake_Orchestrator run to retry yet. Start one with npm run deploy -- --run first_load.');
+  if (!arg('run-id', '') && st?.status === 'running') {
+    fail(`Run ${runId} has not finished its summary: it is still running (follow it with npm run deploy -- --watch), or it stopped in one of\n` +
+      `its own cells. To retry it anyway: npm run deploy -- --rerun-failed --run-id ${runId}`);
+  }
+  if (!arg('run-id', '') && !st?.failed?.length) {
+    console.log(`\nThe last run (${runId}) has no failed steps: nothing to retry.`);
+    process.exit(0);
+  }
+  rerun = { runId, mode: (st?.run_id === runId && st.run_mode) || runId.split('-')[0] };
+  if (st?.run_id === runId) console.log(`\nWill retry ${st.failed.map((f) => f.step).join(', ')} from run ${runId} after deploying.`);
+}
+
 console.log('\nBuilding the notebooks and model files for this Lakehouse (npm run all) ...');
 build();
 
@@ -555,7 +592,20 @@ if (job?.status !== 'Completed') {
 }
 console.log('Lake_Setup passed: the Lakehouse is ready and the app has the permissions it needs.');
 
-if (RUN === 'first_load') {
+if (rerun) {
+  const orch = ids.Lake_Orchestrator;
+  const location = await runNotebook(ws, orch, {
+    RUN_MODE: { value: rerun.mode, type: 'string' },
+    RUN_ID: { value: rerun.runId, type: 'string' },
+    RERUN_FAILED: { value: true, type: 'bool' },
+  }, { wait: false });
+  console.log(`\nStarted Lake_Orchestrator for run ${rerun.runId}, only the steps that did not succeed. Open the notebook:\n  ${notebookLink(ws, orch)}`);
+  console.log('The notebook\'s saved settings (and its schedule) are not changed.');
+  if (location) {
+    const run = await watchOrchestrator(ws, lh.id, orch, location);
+    process.exit(run.status === 'Completed' ? 0 : 1);
+  }
+} else if (RUN === 'first_load') {
   const orch = ids.Lake_Orchestrator;
   const location = await runNotebook(ws, orch, { RUN_MODE: { value: 'first_load', type: 'string' } }, { wait: false });
   console.log(`\nStarted Lake_Orchestrator with RUN_MODE = 'first_load'. It can take hours. Open the notebook:\n  ${notebookLink(ws, orch)}`);

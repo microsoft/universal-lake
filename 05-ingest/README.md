@@ -4,7 +4,7 @@ One notebook, `Lake_Orchestrator`, runs every ingester for the sources you picke
 
 ## Run it
 
-**From your PC:** `npm run deploy -- --run first_load` starts it, then keeps watching and says in the terminal when it ends: succeeded, or which steps failed, each with its error, and the settings to re-run just those. (In Fabric's Monitor hub a failed run only says *System cancelled the Spark session due to statement execution failures*; that is Fabric's generic message whenever the orchestrator reports a failed step.) Closing the window doesn't stop the run; `npm run deploy -- --watch` picks it up again (it deploys nothing). It also prints a link to the notebook. The link opens the notebook, not the run: to watch the run, open the **Run** tab at the top of the notebook (not the **Run all** menu), choose **Recent runs** and open the newest one. Each cell shows whether it has run and its output so far. The **Monitor** hub lists the run too. Or in Fabric:
+**From your PC:** `npm run deploy -- --run first_load` starts it, then keeps watching and says in the terminal when it ends: succeeded, or which steps failed, each with its error, and how to re-run just those. When everything succeeded it says what to do next (check the data, then schedule the daily `incremental` run). (In Fabric's Monitor hub a failed run only says *System cancelled the Spark session due to statement execution failures*; that is Fabric's generic message whenever the orchestrator reports a failed step.) Closing the window doesn't stop the run; `npm run deploy -- --watch` picks it up again (it deploys nothing). It also prints a link to the notebook. The link opens the notebook, not the run: to watch the run, open the **Run** tab at the top of the notebook (not the **Run all** menu), choose **Recent runs** and open the newest one. Each cell shows whether it has run and its output so far. The **Monitor** hub lists the run too. Or in Fabric:
 
 1. Open `Lake_Orchestrator` (deploy printed a link).
 2. In the first cell, change one line: `RUN_MODE = 'first_load'`.
@@ -68,7 +68,7 @@ FROM ops.backfill_ledger ORDER BY recorded_at DESC LIMIT 20;
    WHERE run_id = '<run_id>' AND event = 'end' ORDER BY step_no;
    ```
 2. **401 / 403**: run `Lake_Setup` (or `npm run deploy` again); it names what's missing. See [TROUBLESHOOTING.md](../TROUBLESHOOTING.md#lake_setup-checks).
-3. **Retry only what failed** (also for a timeout or `paused`): in the first cell set `RUN_ID = '<run_id>'` and `RERUN_FAILED = True`, then **Run all**. Steps that already succeeded are skipped; audit and transcripts resume where they stopped.
+3. **Retry only what failed** (also for a timeout or `paused`): in the first cell set `RUN_ID = '<run_id>'` and `RERUN_FAILED = True`, then **Run all**. Steps that already succeeded are skipped; audit and transcripts resume where they stopped. From your PC: `npm run deploy -- --rerun-failed` deploys (so any fix you pulled is included), then does the same for the last run and watches it; add `--run-id <run_id>` for an older run. It doesn't change the notebook's saved settings.
 4. **Run just one step** (e.g. after fixing a permission): `STEPS = 'org_data'`. This is the only time you need `STEPS`. More in [RERUNS.md](../07-orchestrate/RERUNS.md).
 
 Next: [Step 6: Check the data and the models](../06-models/README.md)
