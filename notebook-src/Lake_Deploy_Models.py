@@ -29,7 +29,7 @@ DEFINITIONS_DIR = '/lakehouse/default/Files/universal_lake/models'
 CONNECTION_MODE = 'auto'             # 'auto' (the app if a secret is available, else signin), 'spn', 'signin' or 'existing'
 CONNECTION_ID = ''                   # for CONNECTION_MODE = 'existing'
 CONNECTION_NAME = ''                 # blank: 'Universal Lake SQL <workspace id prefix>'
-DEPLOY = True                        # False: skip create/update and only connect, refresh and probe
+DEPLOY = True                        # True: create or update; 'missing': create only absent models; False: only connect, refresh and probe
 REFRESH = True
 REFRESH_TIMEOUT_MIN = 60
 CLIENT_SECRET = ''                   # NOT recommended: only when you have no Key Vault (blank = read it from Key Vault)
@@ -49,6 +49,8 @@ server = cfg('sql_endpoint', required=True)
 database = cfg('lakehouse_name', required=True)
 conn_name = CONNECTION_NAME or f'Universal Lake SQL {ws[:8]}'
 keys = [k.strip() for k in MODELS.split(',') if k.strip()]
+DEPLOY = {'true': True, 'false': False, 'missing': 'missing'}.get(str(DEPLOY).strip().lower(), DEPLOY)
+REFRESH = str(REFRESH).strip().lower() not in ('false', '0', '')
 
 
 def load_definition(key):
@@ -213,7 +215,9 @@ for i, key in enumerate(keys, 1):
     try:
         print(f'\n=== {name} ===')
         model = find_model(key, name)
-        if DEPLOY:
+        if DEPLOY == 'missing' and model:
+            print(f"Exists ({model['id']}); definition left as is")
+        elif DEPLOY:
             if model:
                 rest_lro('POST', f"/workspaces/{ws}/semanticModels/{model['id']}/updateDefinition", {'definition': definition['definition']})
                 print(f"Updated definition of {model['id']}")
@@ -241,7 +245,10 @@ for i, key in enumerate(keys, 1):
                     '(3) the client secret is current. Or set CONNECTION_MODE = "signin" to use your own sign-in.') from e
             print(f'Bound to connection {connection_id}')
         else:
-            print('Reads the Lakehouse with your sign-in (CONNECTION_MODE = signin).')
+            print('Reads the Lakehouse with your sign-in (CONNECTION_MODE = signin). Refreshes fail until you sign in '
+                  f'once: https://app.powerbi.com/groups/{ws}/settings/datasets/{model_id} > Gateway and cloud connections '
+                  '> Maps to > Create a connection > OAuth 2.0 > Edit credentials (a sign-in window opens) > Create > Apply. '
+                  'To avoid this, give the notebooks the app secret (Key Vault or CLIENT_SECRET) and rerun.')
 
         print('Relationships:')
         for r in bim['model'].get('relationships', []):

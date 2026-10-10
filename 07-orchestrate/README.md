@@ -5,7 +5,7 @@ You already ran `Lake_Orchestrator` once in step 5. From now on it's the daily j
 ## Schedule the daily run
 
 1. Open `Lake_Orchestrator` and set the first cell back to the defaults: `RUN_MODE = 'incremental'`, `DRY_RUN = False`, `STEPS`, `RUN_ID` blank, `RERUN_FAILED = False`. **Save** (schedules use the saved values).
-2. **Run all** once by hand. This time the refresh steps run too (step 6 is done), so check they say `succeeded`.
+2. **Run all** once by hand and check `models` and the refresh steps say `succeeded`.
 3. **Run > Schedule** > once a day.
 
 Don't start a manual run while the scheduled one is running: they share `Files/_audit_staging`.
@@ -45,7 +45,7 @@ These are the only ones you normally touch:
 
 </details>
 
-`audit`, `licensed_users`, `processor` and `promote` are **critical**: if one fails, the rest of the run is skipped. After them come `refresh_universal`, `refresh_consumption`, `refresh_agent_evaluator` and `data_check`. Steps for sources you didn't pick show as `SKIP`.
+`audit`, `licensed_users`, `processor` and `promote` are **critical**: if one fails, the rest of the run is skipped. After them come `models` (creates missing models and connects them as the app), `refresh_universal`, `refresh_consumption`, `refresh_agent_evaluator` and `data_check`. Steps for sources you didn't pick show as `SKIP`.
 
 ## Check a run
 

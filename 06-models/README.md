@@ -1,6 +1,6 @@
-# Step 6: Check the data and deploy the models
+# Step 6: Check the data and the models
 
-Your step 5 run already cleaned the data and sorted it into report-ready tables. Here you check that, then run one notebook to create the semantic models.
+Your step 5 run already cleaned the data and sorted it into report-ready tables. It also created, connected and refreshed the semantic models. Here you check both.
 
 ## 6.1 Check the data
 
@@ -29,9 +29,14 @@ SELECT table_name, layer, status, rows, promoted_at FROM (
 
 Promote messages and its parameters are in [TROUBLESHOOTING.md](../TROUBLESHOOTING.md#promote-messages).
 
-## 6.2 Deploy the semantic models
+## 6.2 The semantic models
 
-`Lake_Deploy_Models` creates the models from the uploaded definitions, connects them to the gold tables and refreshes them.
+The same step 5 run also created the models, connected them and refreshed them:
+
+| Step | Does |
+|---|---|
+| `models` | Runs `Lake_Deploy_Models`: creates any model that doesn't exist yet and connects every model to the gold tables **as the app** |
+| `refresh_*` | Refreshes each model |
 
 | Model | Display name | Tables | Relationships | Module |
 |---|---|---|---|---|
@@ -39,29 +44,31 @@ Promote messages and its parameters are in [TROUBLESHOOTING.md](../TROUBLESHOOTI
 | `consumption` | Universal Lake Consumption Model | 37 | 16 | consumption |
 | `agentEvaluator` | Universal Lake Agent Evaluator Model | 43 | 23 | agentEvaluator |
 
-Models for modules you didn't pick are skipped. Models with these names already in the workspace are **updated**.
+Find them in the workspace (type *Semantic model*). Models for modules you didn't pick aren't created.
 
-1. Open `Lake_Deploy_Models` > **Run all**.
-2. It ends by counting rows per table. A table with `0` rows means its ingester loaded nothing.
+**Nobody has to sign in.** The models read the Lakehouse with the app's secret, so refreshes run unattended. This needs one admin setting, which `Lake_Setup` checks in step 4 (*App can call Fabric*): Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (or a group it is in). If that check warned, ask your Fabric admin, then rerun the orchestrator with `STEPS='models,refresh_universal,refresh_consumption,refresh_agent_evaluator'`.
 
-**Unattended by default.** When the app's secret is available (Key Vault, or `CLIENT_SECRET` which `npm run deploy` fills in when you have no vault), the notebook adds the app to the workspace as **Viewer**, creates a cloud connection signed in as the app and binds each model to it. The orchestrator's refreshes then run with nobody signed in. One admin setting is needed: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (or a group it is in). If it is off, the notebook says so.
+<details>
+<summary>The admin setting can't be turned on</summary>
+
+Then each model needs your sign-in once. The `models` step prints a link per model. Open it > **Gateway and cloud connections** > **Maps to** > **Create a connection** > **OAuth 2.0** > **Edit credentials** (a sign-in window opens) > **Create** > **Apply**. Refreshes keep working while you have access; if you leave, a colleague opens each model > **Settings > Take over** and signs in again.
+
+</details>
+
+### Run `Lake_Deploy_Models` yourself only to
+
+* **Update** the models after `npm run deploy` sent changed model files (a newer repo version, or a new `lakehouse.sqlEndpoint`): **Run all**. The orchestrator never changes an existing model's definition.
+* **Reconnect** after rotating the client secret: `DEPLOY = False`, `REFRESH = False`. (The `models` step also does this on every run.)
 
 | Parameter | Default | Use |
 |---|---|---|
 | `MODELS` | all three | Only some, e.g. `'universal'` |
-| `CONNECTION_MODE` | `auto` | `auto`: the app when its secret is available, else your sign-in. `spn`: always the app. `signin`: your sign-in (below). `existing`: a connection you made, in `CONNECTION_ID`. |
-| `DEPLOY` | `True` | `False`: only reconnect, refresh and count |
-| `REFRESH` | `True` | `False`: deploy only |
+| `DEPLOY` | `True` | `True`: create or update. `'missing'`: create only absent models (what the orchestrator uses). `False`: only connect |
+| `REFRESH` | `True` | `False`: skip the refresh and row counts |
+| `CONNECTION_MODE` | `auto` | `auto`: the app when its secret is available, else your sign-in. `spn`, `signin`, or `existing` (a connection you made, in `CONNECTION_ID`) |
 | `REFRESH_TIMEOUT_MIN` | 60 | Raise for a big first refresh |
 
-<details>
-<summary>Use your own sign-in instead (<code>signin</code>)</summary>
-
-Use this only if the admin setting above can't be turned on. The first refresh stops with *Sign in once* and a link. Open it (the model's settings page), expand **Gateway and cloud connections** (or **Data source credentials**) **> Edit credentials**, pick **OAuth2** and **Sign in**, for each model it names. Then run the notebook again with `DEPLOY = False`. Refreshes keep working while you have access; if you leave, a colleague opens each model > **Settings > Take over** and signs in again.
-
-</details>
-
-**Run it again only when** you rotated the client secret (`DEPLOY = False`), or after `npm run deploy` sent changed model files (a newer repo version, or a new `lakehouse.sqlEndpoint`). Daily refreshes are done by the orchestrator.
+It ends by counting rows per table; `0` rows means that table's ingester loaded nothing.
 
 The models are normal Fabric semantic models: build Power BI reports on them, use them with Copilot in Power BI or a data agent, or query them with DAX. To review one before deploying, open `out/models/<model>/relationships.txt` or `model.bim` on your PC.
 

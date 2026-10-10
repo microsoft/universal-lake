@@ -59,8 +59,8 @@ Opening a notebook and running it is always allowed. It isn't logged to `ops.*`.
 | `processor`: skipped, *dependency audit did not succeed* | Audit failed earlier in the run | Fix audit, then use `RERUN_FAILED` |
 | `promote`: *Required but not in gold* | The processor hasn't produced `copilot_interactions_curated` | Run `processor`, then `promote` |
 | `promote`: *gold_tables.json not found* | Models folder not uploaded | Run `npm run deploy` ([step 4](../04-deploy/README.md)); it uploads `out/models` |
-| `refresh_*`: SKIP, *no model_id* | Models not deployed | Run `Lake_Deploy_Models` |
-| `refresh_*`: *credentials* or *data source* | Connection not bound, or the secret was rotated | Run `Lake_Deploy_Models` with `DEPLOY=False` |
+| `refresh_*`: SKIP, *no model_id* | The `models` step didn't run or failed | See the `models` step's error; rerun with `STEPS='models,refresh_universal'` |
+| `refresh_*`: *credentials* or *data source* | Connection not bound, or the secret was rotated | Rerun with `STEPS='models,refresh_universal'`; if `models` warns about the tenant setting, see [step 6](../06-models/README.md#62-the-semantic-models) |
 | `notebook.run`: *not found* | Notebook missing, or not under its exact name | Run `npm run deploy` again ([step 4](../04-deploy/README.md)) |
 | `agent365` failed and `agent365_lander` succeeded | Registry API unavailable. The CSV fallback filled `agents_365`. | No action needed. `RERUN_FAILED` will try the registry again. |
 | Timeout on any step | Large tenant | `SCALE='large'`, or rerun the step |

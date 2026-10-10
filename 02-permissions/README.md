@@ -55,7 +55,9 @@ If you take this route: keep workspace access to the people who need it, don't s
 | Only for `azureAi` | Three read-only Azure roles for the app | See [2.4](#24-azure-ai-access-only-if-azureai-is-api) | Reads Azure AI resources, their cost and their token usage. |
 | Only for `agentEvaluator` | App is an application user with role **Bot Transcript Viewer** | [Power Platform admin center](https://admin.powerplatform.microsoft.com) > environment > **Settings > Users + permissions > Application users > New app user** | Reads Copilot Studio conversation transcripts from Dataverse. |
 
-You don't need to turn on audit logging: it's on by default in Microsoft 365 tenants. You also don't need any Fabric tenant setting or workspace role for the app: the ingesters call Microsoft Graph, not Fabric, and the semantic models read the Lakehouse with your own sign-in ([step 6](../06-models/README.md#62-deploy-the-semantic-models)).
+You don't need to turn on audit logging: it's on by default in Microsoft 365 tenants.
+
+**One Fabric admin setting**, so the semantic models refresh without anyone signing in: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for this app (or a security group it is in). The models then read the Lakehouse as the app. `Lake_Setup` adds the app to the workspace and checks this setting in step 4. Without it, each model needs your sign-in once ([step 6](../06-models/README.md#62-the-semantic-models)).
 
 ## 2.4 Azure AI access (only if `azureAi` is `api`)
 
@@ -122,6 +124,6 @@ Create a new secret on the app (2.1 step 5), then:
 * **Key Vault**: update the secret in the vault. Notebooks pick it up on the next run.
 * **`config.json` bypass**: update `clientSecret` and run `npm run deploy` (step 4).
 
-In both cases, then run `Lake_Deploy_Models` with `DEPLOY = False` so the models' connection gets the new secret (step 6).
+In both cases, the next orchestrator run gives the models' connection the new secret (its `models` step reconnects them every run).
 
 Next: [Step 3: Configure](../03-configure/README.md)

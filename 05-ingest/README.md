@@ -10,7 +10,7 @@ One notebook, `Lake_Orchestrator`, runs every ingester for the sources you picke
 2. In the first cell, change one line: `RUN_MODE = 'first_load'`.
 3. **Run all**. Note the `RUN_ID` it prints.
 
-That's it. Leave the other settings as they are. The model refresh steps show `SKIP` for now; they start working after step 6.
+That's it. Leave the other settings as they are. The run ends by creating the semantic models and refreshing them; nobody needs to sign in.
 
 Optional: set `DRY_RUN = True` first to only print the plan (which steps, which date ranges) without running anything.
 
@@ -31,7 +31,7 @@ You don't need to pick these; they run automatically. The names show up in the p
 | 9 | `transcripts` | Copilot Studio transcripts | First load: `backfillDays`; daily: 14 days | agentEvaluator |
 | 10–12 | `azure_ai`, `studio`, `viva` | Azure AI cost; Studio and Cowork credits | Azure: 90 days; others: every uploaded file | consumption |
 
-After these come `promote` ([step 6](../06-models/README.md#61-check-the-data)) and the model refreshes. Steps for sources you didn't pick show `SKIP`.
+After these come `promote` ([step 6](../06-models/README.md#61-check-the-data)), `models` (creates and connects the semantic models) and the model refreshes. Steps for sources you didn't pick show `SKIP`.
 
 **Workday only**: run `Copilot_Org_Data_Workday_Lander` by hand after deploying the extract, then `org_data`.
 
@@ -71,4 +71,4 @@ FROM ops.backfill_ledger ORDER BY recorded_at DESC LIMIT 20;
 3. **Retry only what failed** (also for a timeout or `paused`): in the first cell set `RUN_ID = '<run_id>'` and `RERUN_FAILED = True`, then **Run all**. Steps that already succeeded are skipped; audit and transcripts resume where they stopped.
 4. **Run just one step** (e.g. after fixing a permission): `STEPS = 'org_data'`. This is the only time you need `STEPS`. More in [RERUNS.md](../07-orchestrate/RERUNS.md).
 
-Next: [Step 6: Check the data and deploy the models](../06-models/README.md)
+Next: [Step 6: Check the data and the models](../06-models/README.md)

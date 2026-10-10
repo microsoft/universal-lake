@@ -53,7 +53,7 @@ Run `npm run deploy` again after any of these; it only sends what changed:
 * you added or refreshed CSV exports in your exports folder (new files are uploaded; use `-- --reupload-csv` to send a file with the same content again);
 * you took a newer version of this repo (`git pull`).
 
-After a model change, also run `Lake_Deploy_Models` ([step 6](../06-models/README.md)).
+After a model change, also run `Lake_Deploy_Models` to update the existing models ([step 6](../06-models/README.md#run-lake_deploy_models-yourself-only-to)).
 
 **Moving to a different workspace or Lakehouse:** change `workspace.name` or `lakehouse.name`, clear `workspace.id`, `lakehouse.id` and `lakehouse.sqlEndpoint` (set them to `""`), and deploy. Everything is set up fresh there.
 

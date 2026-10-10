@@ -83,6 +83,14 @@ def model_args(key, write_mode):
     return {'WORKSPACE_ID': WORKSPACE_ID, 'SEMANTIC_MODEL_ID': cfg(f'model_id.{key}', ''),
             'WRITE_MODE': write_mode, 'TIMEOUT_MINUTES': 290 if LARGE else 170}
 
+# Model key -> the module it belongs to. The models step creates any model that is missing and (re)connects all of
+# them as the app, so the refreshes after it run unattended. Existing model definitions are left as they are.
+MODEL_MODULE = {'universal': 'copilotInteractions', 'consumption': 'consumption', 'agentEvaluator': 'agentEvaluator'}
+
+def models_args():
+    return {'RUN_ID': RUN_ID, 'MODELS': ','.join(k for k, m in MODEL_MODULE.items() if m in MODULES),
+            'DEPLOY': 'missing', 'REFRESH': False}
+
 TRANSCRIPT_DAYS = BACKFILL_DAYS if IS_BACKFILL else 14
 
 # name, notebook, module, critical, timeout_s, args (callable), ledger (source, days) or None
@@ -103,6 +111,7 @@ STEPS_ALL = [
     ('studio',           'Consumption_Ingest_Studio',              'consumption',     False, 30 * 60, dict, ('studio_consumption', None)),
     ('viva',             'Consumption_Ingest_Viva',                'consumption',     False, 30 * 60, dict, ('viva_consumption', None)),
     ('promote',          'Lake_Promote_Medallion',                   'copilotInteractions',            True,  1 * H, lambda: {'RUN_ID': RUN_ID}, None),
+    ('models',           'Lake_Deploy_Models',                     'copilotInteractions',            False, 1 * H, models_args, None),
     ('refresh_universal','AnalyticsHub_Refresh_Model',             'copilotInteractions',            False, (5 if LARGE else 3) * H,
         lambda: model_args('universal', 'overwrite' if IS_BACKFILL else 'merge'), None),
     ('refresh_consumption', 'AnalyticsHub_Refresh_Model',          'consumption',     False, (5 if LARGE else 3) * H,
@@ -117,7 +126,7 @@ NAMES = [s[0] for s in STEPS_ALL]
 FALLBACKS = {'agent365': ('agent365_lander', 'Copilot_Agent365_Lander', 15 * 60)}
 
 # Steps that must have succeeded (in this run or, with RERUN_FAILED, earlier in RUN_ID) before a step may start.
-DEPENDS = {'processor': ['audit', 'licensed_users'], 'promote': ['processor']}
+DEPENDS = {'processor': ['audit', 'licensed_users'], 'promote': ['processor'], 'models': ['promote']}
 for r in ('refresh_universal', 'refresh_consumption', 'refresh_agent_evaluator'):
     DEPENDS[r] = ['promote']
 
@@ -150,11 +159,13 @@ for i, (name, nb, module, critical, timeout, args, led) in enumerate(STEPS_ALL):
         reason = f'already succeeded in {RUN_ID}'
     plan.append((name, nb, module, critical, timeout, args, led, reason))
 
-# A refresh needs its model id, which Lake_Deploy_Models saves.
+# A refresh needs its model id. The models step saves it, so a missing id only skips the refresh when that step
+# is not part of this run; otherwise it is checked again just before the refresh runs.
 MODEL_KEY = {'refresh_universal': 'universal', 'refresh_consumption': 'consumption',
              'refresh_agent_evaluator': 'agentEvaluator'}
-plan = [(n, nb, m, c, t, a, l, r or ('' if n not in MODEL_KEY or cfg(f'model_id.{MODEL_KEY[n]}', '')
-                                       else f'no model_id.{MODEL_KEY[n]} in ops.config; run Lake_Deploy_Models'))
+models_running = any(n == 'models' and not r for (n, *_rest, r) in plan)
+plan = [(n, nb, m, c, t, a, l, r or ('' if n not in MODEL_KEY or models_running or cfg(f'model_id.{MODEL_KEY[n]}', '')
+                                       else f"no model_id.{MODEL_KEY[n]} in ops.config; add 'models' to STEPS"))
         for (n, nb, m, c, t, a, l, r) in plan]
 
 # Sources set to 'csv' need their export uploaded first. A missing file doesn't stop the run: the step still runs
@@ -277,6 +288,12 @@ for step_no, (name, nb, module, critical, timeout, args, led, reason) in enumera
         rec = log_start(RUN_ID, name, nb, RUN_MODE, {}, step_no)
         log_end(rec, 'skipped', None, f'not run: critical step {stopped} failed')
         results[name] = 'skipped'
+        continue
+    if name in MODEL_KEY and not cfg(f'model_id.{MODEL_KEY[name]}', ''):
+        rec = log_start(RUN_ID, name, nb, RUN_MODE, {}, step_no)
+        log_end(rec, 'skipped', None, f'no model_id.{MODEL_KEY[name]}: the models step did not create it')
+        results[name] = 'skipped'
+        print(f'\n=== [{step_no}] {name}: SKIPPED, model {MODEL_KEY[name]} does not exist (see the models step)')
         continue
     ok, dep = ok_so_far(name, results)
     if not ok:

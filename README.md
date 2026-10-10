@@ -83,7 +83,7 @@ Do them in order. Each folder's README is a short checklist; if something goes w
 | [3. Configure](03-configure/README.md) | Finish `config.json`: data sources and your exports folder | Your PC |
 | [4. Deploy](04-deploy/README.md) | `npm run deploy`: creates the Lakehouse, uploads notebooks, model files and CSVs, runs `Lake_Setup` to check everything | Your PC |
 | [5. Ingest](05-ingest/README.md) | Run `Lake_Orchestrator` once with `first_load`: all ingesters, the first backfill, processing and promote | Fabric |
-| [6. Models](06-models/README.md) | Check the report-ready tables, run `Lake_Deploy_Models` to create and refresh the models | Fabric |
+| [6. Models](06-models/README.md) | Check the report-ready tables and the semantic models the step 5 run created | Fabric |
 | [7. Orchestrate](07-orchestrate/README.md) | Schedule the daily run, [re-run only what failed](07-orchestrate/RERUNS.md) | Fabric |
 
 **Backfill.** The first run loads 30 days of audit history by default (up to 180). Daily runs then pick up where the last one stopped. Every date range loaded is recorded in `ops.backfill_ledger`.
@@ -122,7 +122,7 @@ They ask Microsoft's APIs for data a few requests at a time, stay within Purview
 
 Everything is in this repo. `notebooks/` holds the ingester and processor notebooks, `models/` the semantic model definitions (`.bim`), and `scripts/build/` the code that fills in your settings. `npm run deploy` fills them in and sends them to Fabric (`npm run all` only builds them into `out/`). The `Lake_*` notebooks (sources in `notebook-src/`) set up the Lakehouse and check credentials (`Lake_Setup`), sort tables into layers, deploy the models and run everything in order.
 
-To take a newer version of this repo: `git pull`, `npm run deploy` (it only sends what changed), then run `Lake_Deploy_Models` and `Lake_Orchestrator`.
+To take a newer version of this repo: `git pull`, `npm run deploy` (it only sends what changed), then run `Lake_Deploy_Models` (updates the models) and `Lake_Orchestrator`.
 
 ## Keeping IDs and secrets out of the repo
 
