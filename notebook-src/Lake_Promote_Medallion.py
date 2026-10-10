@@ -99,19 +99,22 @@ try:
         if DRY_RUN:
             results.append((table, layer, 'planned', None, version, ''))
             continue
-        if SKIP_UNCHANGED and version is not None and table_exists(dst) and last_promoted_version(table, layer) == version:
+        if (SKIP_UNCHANGED and version is not None and table_exists(dst)
+                and last_promoted_version(table, layer) == version
+                and spark.table(dst).columns == spark.table(src).columns):
             results.append((table, layer, 'unchanged', row_count(dst), version, 'source version unchanged'))
             continue
         try:
             df = spark.table(src)
-            # Delta rejects these characters in column names; replace them with '_'.
-            for c in df.columns:
-                clean = c
-                for ch in [' ', ',', ';', '{', '}', '(', ')', '\n', '\t', '=']:
-                    clean = clean.replace(ch, '_')
-                if clean != c:
-                    df = df.withColumnRenamed(c, clean)
-            df.write.format('delta').mode('overwrite').option('overwriteSchema', 'true').saveAsTable(dst)
+            # Keep column names exactly as in dbo (e.g. 'License Status'): the models read them by name.
+            # Column mapping lets Delta store names with spaces and other special characters.
+            if table_exists(dst):
+                props = {r['key']: r['value'] for r in spark.sql(f'SHOW TBLPROPERTIES {dst}').collect()}
+                if props.get('delta.columnMapping.mode') != 'name':
+                    spark.sql(f"ALTER TABLE {dst} SET TBLPROPERTIES ('delta.minReaderVersion' = '2', "
+                              f"'delta.minWriterVersion' = '5', 'delta.columnMapping.mode' = 'name')")
+            (df.write.format('delta').mode('overwrite').option('overwriteSchema', 'true')
+               .option('delta.columnMapping.mode', 'name').saveAsTable(dst))
             n = spark.table(dst).count()
             results.append((table, layer, 'promoted', n, version, ''))
         except Exception as e:
