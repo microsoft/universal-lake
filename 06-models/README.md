@@ -49,9 +49,9 @@ Find them in the workspace (type *Semantic model*). Models for modules you didn'
 **Nobody has to sign in.** The models read the Lakehouse with the app's secret, so refreshes run unattended. This needs one admin setting, which `Lake_Setup` checks in step 4 (*App can call Fabric*): Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (or a group it is in). It is on by default in tenants created since mid-2025, so usually there's nothing to do.
 
 <details>
-<summary>If the setting is off: sign in once per model</summary>
+<summary>If the setting is off: sign in once</summary>
 
-The `models` step then falls back to your own sign-in by itself and prints a link per model; the refresh steps fail with *credentials* and print the same link. Either ask your Fabric admin to turn the setting on (the next run connects as the app), or sign in once per model. Open it > **Gateway and cloud connections** > **Maps to** > **Create a connection** > **OAuth 2.0** > **Edit credentials** (a sign-in window opens) > **Create** > **Apply**. Refreshes keep working while you have access; if you leave, a colleague opens each model > **Settings > Take over** and signs in again. Then rerun the orchestrator with `STEPS='refresh_universal'` (plus the other `refresh_*` steps you use).
+The `models` step then falls back to your own sign-in by itself and prints a link per model; the refresh steps fail with *credentials* and print the same link. Either ask your Fabric admin to turn the setting on (the next run connects as the app), or sign in once. Open the printed link (any one model) > **Gateway and cloud connections** > **Maps to** > **Create a connection** > **OAuth 2.0** > **Edit credentials** (a sign-in window opens) > **Create** > **Apply**. You do this once for the workspace: every run (and every redeploy) finds that sign-in connection and attaches all the models to it, so new or recreated models need nothing. Refreshes keep working while your account has access to the workspace. If you leave, a colleague creates their own connection the same way, and deletes yours under Settings > **Manage connections and gateways**. Then rerun the orchestrator with `STEPS='refresh_universal'` (plus the other `refresh_*` steps you use).
 
 </details>
 
