@@ -2,7 +2,13 @@
 
 Build **one Microsoft Fabric Lakehouse** that holds your Microsoft 365 Copilot data, your agent data, and how people use Teams, Outlook, Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive and Viva Engage. The data is cleaned and shaped into report-ready tables, and **semantic models** sit on top, ready for Power BI, Copilot in Power BI, data agents or your own SQL.
 
-You do each step yourself, so when something fails you can see which step, which source and which dates, and re-run just that.
+**Why bother?** Most Copilot and Microsoft 365 reports each collect their own copy of the data, so every new report means setting up the same sources, permissions and refreshes again. Build the lake once and that stops:
+
+* **Plug in our Power BI templates** without repeating the setup for each report. They all read the same semantic models.
+* **Build your own analytics and observability foundation.** All the data sits in one place you own, ready for your own reports, Fabric apps, data agents or plain SQL.
+* **Know exactly what's going on.** Every step is a notebook you can open, read, change and rerun, so you can customise what's collected and how it's shaped.
+
+**Fair warning: this is flat-pack furniture.** Think of it as assembling an IKEA wardrobe. You unbox the parts, gather the tools, do one step, then check the manual for the next. There's no single "install" button, and at some point you'll hold a piece up and wonder which way round it goes. That's the trade: it takes a little longer than a one-click install, but at the end you know where every shelf and screw is, and you can move them. When something fails, you can see which step, which source and which dates, and rerun just that.
 
 **You end up with**
 
@@ -10,7 +16,7 @@ You do each step yourself, so when something fails you can see which step, which
 * semantic models with relationships and measures, ready to report on;
 * a log of every step and every date range loaded.
 
-**What it opens up.** The lake is the foundation. Once it exists you can connect **Power BI report templates** to its semantic models, and build **Fabric apps** on it, without collecting the data again. Those are separate deployments; this repo builds the lake and the models only.
+This repo builds the lake and the models. Power BI templates and Fabric apps on top are separate deployments that connect to them.
 
 ```mermaid
 flowchart LR
