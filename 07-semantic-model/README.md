@@ -16,23 +16,23 @@ To review a model before deploying, open `out/models/<model>/relationships.txt` 
 
 In the step 5 run output, `models` and the `refresh_*` steps should say `succeeded`. The models appear in the workspace under the display names above.
 
-**How it stays unattended.** The `models` step creates a cloud connection signed in as the app (with its secret) and binds each model to it, so refreshes need nobody signed in. It runs on every orchestrator run, so a rotated secret is picked up automatically. It needs one admin setting: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (on by default in tenants created since mid-2025). `Lake_Validate_Credentials` ([step 2](../02-permissions/README.md)) warns you if it is off.
+**How it stays unattended.** The `models` step creates a cloud connection signed in as the app (with its secret) and binds each model to it, so refreshes need nobody signed in. It runs on every orchestrator run, so a rotated secret is picked up automatically. It needs one admin setting: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (on by default in tenants created since mid-2025). It is on by default, so usually there's nothing to do; `Lake_Validate_Credentials` ([step 2](../02-permissions/README.md)) warns you if it is off.
 
-If `models` failed or the refreshes say *credentials*, fix the setting and rerun with `STEPS='models,refresh_universal'` (add the other `refresh_*` steps you use).
+If the setting is off, the `models` step falls back to your own sign-in by itself and prints a link per model; the refresh steps fail with *credentials* and print the same link. Either ask your Fabric admin to turn it on (the next run connects as the app), or sign in once per model (below).
 
 ## Parameters
 
 | Parameter | Default | Use |
 |---|---|---|
 | `MODELS` | all three | Only some, e.g. `'universal'` |
-| `CONNECTION_MODE` | `auto` | `auto`: the app when its secret is available, else your sign-in. `spn`: always the app. `signin`: your sign-in (below). `existing`: a connection you made yourself, in `CONNECTION_ID`. |
+| `CONNECTION_MODE` | `auto` | `auto`: the app, falling back to your sign-in if that fails or there's no secret. `spn`: always the app. `signin`: your sign-in (below). `existing`: a connection you made yourself, in `CONNECTION_ID`. |
 | `DEPLOY` | `True` | `False`: don't change the definition; only reconnect, refresh and count. `'missing'`: create missing models only (what the orchestrator uses) |
 | `REFRESH` | `True` | `False`: deploy only |
 | `REFRESH_TIMEOUT_MIN` | 60 | Raise for a big first refresh |
 
-<details><summary>Fallback: only if the admin setting can't be turned on</summary>
+<details><summary>If the setting is off: sign in once per model</summary>
 
-Run `Lake_Deploy_Models` with `CONNECTION_MODE = 'signin'`. It prints each model's settings link. There: **Gateway and cloud connections > Maps to > Create a connection**, pick **OAuth 2.0 > Edit credentials** (a sign-in window opens), then **Create > Apply**. Do it once per model. If you leave, a colleague opens each model > **Settings > Take over** and signs in again.
+Open each printed link (the model's settings page). There: **Gateway and cloud connections > Maps to > Create a connection**, pick **OAuth 2.0 > Edit credentials** (a sign-in window opens), then **Create > Apply**. Do it once per model. If you leave, a colleague opens each model > **Settings > Take over** and signs in again. Then rerun the orchestrator with `STEPS='refresh_universal'` (plus the other `refresh_*` steps you use).
 
 </details>
 

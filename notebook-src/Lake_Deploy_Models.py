@@ -16,7 +16,7 @@
 # |---|---|---|
 # | Find | Looks the model up by the ID in `ops.config`, then by display name | n/a |
 # | Create / update | Creates the model, or replaces its definition (`updateDefinition`). Updating clears its data until the refresh | Fix the reported error and run again. Nothing else has changed yet |
-# | Connect | `CONNECTION_MODE`: `auto` (default) uses the app when its secret is available (Key Vault or `CLIENT_SECRET`), so refreshes run unattended; `spn` forces the app; `signin` uses your own sign-in, given once on the model's settings page; `existing` uses `CONNECTION_ID` | `spn`: the message names the tenant setting or role to fix. `signin`: it tells you where to sign in, then rerun with `DEPLOY = False` |
+# | Connect | `CONNECTION_MODE`: `auto` (default) uses the app when its secret is available (Key Vault or `CLIENT_SECRET`), so refreshes run unattended, and falls back to `signin` if that fails; `spn` forces the app; `signin` uses your own sign-in, given once on the model's settings page; `existing` uses `CONNECTION_ID` | `spn`: the message names the tenant setting or role to fix. `signin`: it tells you where to sign in, then rerun with `DEPLOY = False` |
 # | Refresh | Full refresh, then waits for it | `ops.run_log` holds the service's error; usually a missing gold table or the connection |
 # | Probe | Counts rows in each model table through DAX | Zero rows means the gold table is empty: check the ingest for that source |
 #
@@ -26,7 +26,7 @@
 RUN_ID = ''
 MODELS = 'universal,consumption,agentEvaluator'   # keys to deploy; missing definition files are skipped
 DEFINITIONS_DIR = '/lakehouse/default/Files/universal_lake/models'
-CONNECTION_MODE = 'auto'             # 'auto' (the app if a secret is available, else signin), 'spn', 'signin' or 'existing'
+CONNECTION_MODE = 'auto'             # 'auto' (the app; signin if that fails or there is no secret), 'spn', 'signin' or 'existing'
 CONNECTION_ID = ''                   # for CONNECTION_MODE = 'existing'
 CONNECTION_NAME = ''                 # blank: 'Universal Lake SQL <workspace id prefix>'
 DEPLOY = True                        # True: create or update; 'missing': create only absent models; False: only connect, refresh and probe
@@ -102,7 +102,8 @@ def app_secret():
     return None
 
 
-if CONNECTION_MODE == 'auto':
+AUTO_MODE = CONNECTION_MODE == 'auto'
+if AUTO_MODE:
     CONNECTION_MODE = 'spn' if app_secret() else 'signin'
     print(f'CONNECTION_MODE auto -> {CONNECTION_MODE}'
           + ('' if CONNECTION_MODE == 'spn' else ' (no Key Vault or CLIENT_SECRET, so refreshes use your sign-in)'))
@@ -237,18 +238,23 @@ for i, key in enumerate(keys, 1):
             try:
                 connection_id = connection_id or ensure_connection()
                 bind(model_id, connection_id)
+                print(f'Bound to connection {connection_id}')
             except Exception as e:
-                raise RuntimeError(
-                    f'Could not connect the model as the app: {str(e)[:1500]}\n'
-                    'Check: (1) a Fabric admin allows "Service principals can call Fabric public APIs" for the app '
-                    '(Admin portal > Tenant settings > Developer settings); (2) you are Admin or Member of the workspace; '
-                    '(3) the client secret is current. Or set CONNECTION_MODE = "signin" to use your own sign-in.') from e
-            print(f'Bound to connection {connection_id}')
-        else:
+                if not AUTO_MODE:
+                    raise RuntimeError(
+                        f'Could not connect the model as the app: {str(e)[:1500]}\n'
+                        'Check: (1) a Fabric admin allows "Service principals can call Fabric public APIs" for the app '
+                        '(Admin portal > Tenant settings > Developer settings); (2) you are Admin or Member of the workspace; '
+                        '(3) the client secret is current. Or set CONNECTION_MODE = "signin" to use your own sign-in.') from e
+                CONNECTION_MODE = 'signin'
+                print(f'WARNING: could not connect as the app ({str(e)[:500]}). Usually the Fabric admin setting '
+                      '"Service principals can call Fabric public APIs" is off. Falling back to your own sign-in.')
+        if CONNECTION_MODE not in ('spn', 'existing'):
             print('Reads the Lakehouse with your sign-in (CONNECTION_MODE = signin). Refreshes fail until you sign in '
                   f'once: https://app.powerbi.com/groups/{ws}/settings/datasets/{model_id} > Gateway and cloud connections '
                   '> Maps to > Create a connection > OAuth 2.0 > Edit credentials (a sign-in window opens) > Create > Apply. '
-                  'To avoid this, give the notebooks the app secret (Key Vault or CLIENT_SECRET) and rerun.')
+                  'Once a Fabric admin turns on "Service principals can call Fabric public APIs", the next run '
+                  'connects as the app instead and this is no longer needed.')
 
         print('Relationships:')
         for r in bim['model'].get('relationships', []):
@@ -267,7 +273,7 @@ for i, key in enumerate(keys, 1):
                     f'Sign in once: open https://app.powerbi.com/groups/{ws}/settings/datasets/{model_id} , '
                     'then Gateway and cloud connections (or Data source credentials) > Edit credentials > OAuth2 > '
                     'Sign in. Then rerun this notebook with DEPLOY = False. You do this once per model. '
-                    'For unattended refreshes use CONNECTION_MODE = "spn" with Key Vault or CLIENT_SECRET instead.')
+                    'Or ask a Fabric admin to turn on "Service principals can call Fabric public APIs" so the app connects instead.')
             if state != 'Completed':
                 raise RuntimeError(f'Refresh {state}: {json.dumps(detail.get("serviceExceptionJson") or detail)[:3000]}')
             try:

@@ -60,7 +60,7 @@ Opening a notebook and running it is always allowed. It isn't logged to `ops.*`.
 | `promote`: *Required but not in gold* | The processor hasn't produced `copilot_interactions_curated` | Run `processor`, then `promote` |
 | `promote`: *gold_tables.json not found* | Models folder not uploaded | Upload `out/models` ([step 4.5](../04-import/README.md#45-upload-the-model-definitions)) |
 | `refresh_*`: SKIP, *no model_id* | `models` didn't run or failed | Rerun with `STEPS='models,refresh_universal'` |
-| `refresh_*`: *credentials* or *data source* | The Fabric admin setting is off, or `models` didn't run | Fix the setting ([step 7](../07-semantic-model/README.md#check-them)), then rerun with `STEPS='models,refresh_universal'` |
+| `refresh_*`: *credentials* or *data source* | The Fabric admin setting is off, or `models` didn't run | Sign in once per model with the printed link, or have the setting turned on ([step 7](../07-semantic-model/README.md#check-them)); then rerun with `STEPS='models,refresh_universal'` |
 | `notebook.run`: *not found* | Notebook missing, or not under its exact name | Import it again ([step 4](../04-import/README.md)) |
 | `agent365` failed and `agent365_lander` succeeded | Registry API unavailable. The CSV fallback filled `agents_365`. | No action needed. `RERUN_FAILED` will try the registry again. |
 | Timeout on any step | Large tenant | `SCALE='large'`, or rerun the step |
