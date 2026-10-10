@@ -46,12 +46,12 @@ The same step 5 run also created the models, connected them and refreshed them:
 
 Find them in the workspace (type *Semantic model*). Models for modules you didn't pick aren't created.
 
-**Nobody has to sign in.** The models read the Lakehouse with the app's secret, so refreshes run unattended. This needs one admin setting, which `Lake_Setup` checks in step 4 (*App can call Fabric*): Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (or a group it is in). If that check warned, ask your Fabric admin, then rerun the orchestrator with `STEPS='models,refresh_universal,refresh_consumption,refresh_agent_evaluator'`.
+**Nobody has to sign in.** The models read the Lakehouse with the app's secret, so refreshes run unattended. This needs one admin setting, which `Lake_Setup` checks in step 4 (*App can call Fabric*): Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (or a group it is in). It is on by default in tenants created since mid-2025, so usually there's nothing to do.
 
 <details>
-<summary>The admin setting can't be turned on</summary>
+<summary>If the setting is off: sign in once per model</summary>
 
-Then each model needs your sign-in once. The `models` step prints a link per model. Open it > **Gateway and cloud connections** > **Maps to** > **Create a connection** > **OAuth 2.0** > **Edit credentials** (a sign-in window opens) > **Create** > **Apply**. Refreshes keep working while you have access; if you leave, a colleague opens each model > **Settings > Take over** and signs in again.
+The `models` step then falls back to your own sign-in by itself and prints a link per model; the refresh steps fail with *credentials* and print the same link. Either ask your Fabric admin to turn the setting on (the next run connects as the app), or sign in once per model. Open it > **Gateway and cloud connections** > **Maps to** > **Create a connection** > **OAuth 2.0** > **Edit credentials** (a sign-in window opens) > **Create** > **Apply**. Refreshes keep working while you have access; if you leave, a colleague opens each model > **Settings > Take over** and signs in again. Then rerun the orchestrator with `STEPS='refresh_universal'` (plus the other `refresh_*` steps you use).
 
 </details>
 
@@ -65,7 +65,7 @@ Then each model needs your sign-in once. The `models` step prints a link per mod
 | `MODELS` | all three | Only some, e.g. `'universal'` |
 | `DEPLOY` | `True` | `True`: create or update. `'missing'`: create only absent models (what the orchestrator uses). `False`: only connect |
 | `REFRESH` | `True` | `False`: skip the refresh and row counts |
-| `CONNECTION_MODE` | `auto` | `auto`: the app when its secret is available, else your sign-in. `spn`, `signin`, or `existing` (a connection you made, in `CONNECTION_ID`) |
+| `CONNECTION_MODE` | `auto` | `auto`: the app, falling back to your sign-in if that fails or there's no secret. `spn`, `signin`, or `existing` (a connection you made, in `CONNECTION_ID`) |
 | `REFRESH_TIMEOUT_MIN` | 60 | Raise for a big first refresh |
 
 It ends by counting rows per table; `0` rows means that table's ingester loaded nothing.

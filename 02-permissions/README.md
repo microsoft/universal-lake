@@ -57,7 +57,7 @@ If you take this route: keep workspace access to the people who need it, don't s
 
 You don't need to turn on audit logging: it's on by default in Microsoft 365 tenants.
 
-**One Fabric admin setting**, so the semantic models refresh without anyone signing in: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for this app (or a security group it is in). The models then read the Lakehouse as the app. `Lake_Setup` adds the app to the workspace and checks this setting in step 4. Without it, each model needs your sign-in once ([step 6](../06-models/README.md#62-the-semantic-models)).
+**One Fabric admin setting**, so the semantic models refresh without anyone signing in: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for this app (or a security group it is in). It's on by default in tenants created since mid-2025. The models then read the Lakehouse as the app. `Lake_Setup` adds the app to the workspace and checks this setting in step 4. Without it, the notebooks fall back to your sign-in, once per model ([step 6](../06-models/README.md#62-the-semantic-models)).
 
 ## 2.4 Azure AI access (only if `azureAi` is `api`)
 

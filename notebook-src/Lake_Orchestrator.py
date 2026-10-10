@@ -322,6 +322,13 @@ for step_no, (name, nb, module, critical, timeout, args, led, reason) in enumera
             print(f'    {name} failed but its fallback {fname} succeeded')
             continue
 
+    if status != 'succeeded' and name in MODEL_KEY and err and ('credential' in err.lower() or 'aswl' in err.lower()):
+        mid = cfg(f'model_id.{MODEL_KEY[name]}', '')
+        print(f'    The model could not sign in to the Lakehouse. Sign in once: https://app.powerbi.com/groups/{WORKSPACE_ID}/settings/datasets/{mid} '
+              '> Gateway and cloud connections > Maps to > Create a connection > OAuth 2.0 > Edit credentials (a sign-in '
+              'window opens) > Create > Apply. Or ask a Fabric admin to turn on "Service principals can call Fabric public '
+              f"APIs\" so the models step connects as the app. Then rerun with STEPS='{name}'.")
+
     if status != 'succeeded':
         failures.append((name, status, err))
         if critical:
