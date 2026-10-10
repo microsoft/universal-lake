@@ -463,7 +463,9 @@ console.log('Lake_Setup passed: the Lakehouse is ready and the app has the permi
 if (RUN === 'first_load') {
   const orch = ids.Lake_Orchestrator;
   await runNotebook(ws, orch, { RUN_MODE: { value: 'first_load', type: 'string' } }, { wait: false });
-  console.log(`\nStarted Lake_Orchestrator with RUN_MODE = 'first_load'. It can take hours; follow it here:\n  ${notebookLink(ws, orch)}`);
+  console.log(`\nStarted Lake_Orchestrator with RUN_MODE = 'first_load'. It can take hours. Open the notebook:\n  ${notebookLink(ws, orch)}`);
+  console.log("This link opens the notebook, not the run. To watch the run, in the notebook choose Run > Recent runs and open the newest one:");
+  console.log("each cell shows whether it has run and its output so far. The Monitor hub (left bar in Fabric) lists the run too.");
 } else {
   console.log(`\nNext (step 5): open Lake_Orchestrator, set RUN_MODE = 'first_load' and Run all, or run npm run deploy -- --run first_load.\n  ${notebookLink(ws, ids.Lake_Orchestrator)}`);
 }
