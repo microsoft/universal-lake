@@ -68,7 +68,7 @@ cd UniversalLake
 copy config.template.json config.json
 ```
 
-`config.json` is git-ignored, so your IDs never get committed. Leave it as it is for now. Each setting has a `//` comment saying what it is and where it comes from; leave the comments in (your editor may underline them; that's fine). There's no `npm install`: the build uses only Node.js and Python. If `npm` is blocked on your PC (e.g. a Microsoft-managed device), see [If `npm run all` doesn't work](03-configure/README.md#if-npm-run-all-doesnt-work).
+Your IDs stay in `config.json` on your PC; it is never uploaded to GitHub. Leave it as it is for now. Each setting has a `//` comment saying what it is and where it comes from; leave the comments in (your editor may underline them; that's fine). There's no `npm install`: the build uses only Node.js and Python. If `npm` is blocked on your PC (e.g. a Microsoft-managed device), see [If `npm run all` doesn't work](03-configure/README.md#if-npm-run-all-doesnt-work).
 
 **2. Decide which sources you want.** Look at the [data sources table](#data-sources). `copilotInteractions` and `orgData` are required; start with those and add others later if you like. Your choice decides the app's permissions in step 2, so make it now (you write it into `config.json` in step 3).
 
@@ -132,10 +132,6 @@ Everything is in this repo. `notebooks/` holds the ingester and processor notebo
 
 To take a newer version of this repo: `git pull`, run `npm run all`, re-import what it says changed ([step 4](04-import/README.md#re-building-later)), then run `Lake_Deploy_Models` (to update the models) and `Lake_Orchestrator`.
 
-## Keeping IDs and secrets out of the repo
-
-Your IDs (and the secret, if you use the bypass) go only in `config.json` and `out/`, which are git-ignored. `npm run scan` fails if a file that would be committed has a GUID, a secret or key, a personal path or email, a notebook with outputs or a Lakehouse binding, or any term you list in `.scan-blocklist` (git-ignored). Run `git config core.hooksPath .githooks` once to scan before every commit; CI runs the same scan on every push.
-
 ## Repository layout
 
 ```
@@ -147,3 +143,7 @@ models/                        semantic model definitions (.bim)
 notebook-src/                  readable sources of the Lake_* notebooks
 out/                           generated, git-ignored: what you import into Fabric
 ```
+
+## For contributors
+
+Only needed if you change this repo and push it back. Your IDs (and the secret, if you use the bypass) go only in `config.json` and `out/`, which are git-ignored. `npm run scan` fails if a file that would be committed has a GUID, a secret or key, a personal path or email, a notebook with outputs or a Lakehouse binding, or any term you list in `.scan-blocklist` (git-ignored). Run `git config core.hooksPath .githooks` once to scan before every commit; CI runs the same scan on every push.
