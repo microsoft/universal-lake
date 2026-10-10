@@ -77,6 +77,14 @@ To run promote alone, open `Lake_Promote_Medallion`:
 
 To reclassify agents: add rows to `dbo.agent_type_overrides`, then run the orchestrator with `RUN_MODE = 'backfill'` and `STEPS = 'processor,promote'`. No re-fetch needed.
 
+## Model refresh messages
+
+| Message | Fix |
+|---|---|
+| `Premium_ASWL_Error` / *default data connection without explicit connection credentials* | The model isn't bound to a connection. Rerun `Lake_Deploy_Models` with `DEPLOY = False` (`CONNECTION_MODE = 'auto'` or `'spn'`); it binds the model to a connection signed in as the app. |
+| *Could not connect the model as the app* | Turn on *Service principals can call Fabric public APIs* for the app (Admin portal > Tenant settings > Developer settings), check you're Admin or Member of the workspace and that the secret is current. |
+| *Sign in once* | You're in `signin` mode. Sign in on the model's settings page as the message says, or switch to `spn` for unattended refreshes. |
+
 ## npm is blocked
 
 `npm` is only a shortcut; nothing is downloaded. Run `node scripts/deploy.mjs` instead of `npm run deploy` (with the same options, without the `--`). On a Microsoft-managed PC you can also point npm at the internal feed once: `npm config set registry https://packagefeedproxy.microsoft.io/npm`.

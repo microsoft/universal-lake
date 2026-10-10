@@ -42,32 +42,26 @@ Promote messages and its parameters are in [TROUBLESHOOTING.md](../TROUBLESHOOTI
 Models for modules you didn't pick are skipped. Models with these names already in the workspace are **updated**.
 
 1. Open `Lake_Deploy_Models` > **Run all**.
-2. **First time only:** the refresh stops with *Sign in once* and a link. Open the link (the model's settings page), expand **Data source credentials > Edit credentials**, pick **OAuth2** and **Sign in**. Do this for each model it names, then run the notebook again with `DEPLOY = False`.
-3. It ends by counting rows per table. A table with `0` rows means its ingester loaded nothing.
+2. It ends by counting rows per table. A table with `0` rows means its ingester loaded nothing.
 
-The models read the gold tables with **your** sign-in, so no admin setting or app role is needed. If you leave, a colleague opens each model > **Settings > Take over** and signs in the same way. The orchestrator's refresh steps are skipped until this notebook has run once.
+**Unattended by default.** When the app's secret is available (Key Vault, or `CLIENT_SECRET` which `npm run deploy` fills in when you have no vault), the notebook adds the app to the workspace as **Viewer**, creates a cloud connection signed in as the app and binds each model to it. The orchestrator's refreshes then run with nobody signed in. One admin setting is needed: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (or a group it is in). If it is off, the notebook says so.
 
 | Parameter | Default | Use |
 |---|---|---|
 | `MODELS` | all three | Only some, e.g. `'universal'` |
-| `CONNECTION_MODE` | `signin` | `signin`: your sign-in (above). `spn`: reads as the app, for unattended production (below). `existing`: a connection you made, in `CONNECTION_ID`. |
+| `CONNECTION_MODE` | `auto` | `auto`: the app when its secret is available, else your sign-in. `spn`: always the app. `signin`: your sign-in (below). `existing`: a connection you made, in `CONNECTION_ID`. |
 | `DEPLOY` | `True` | `False`: only reconnect, refresh and count |
 | `REFRESH` | `True` | `False`: deploy only |
 | `REFRESH_TIMEOUT_MIN` | 60 | Raise for a big first refresh |
 
 <details>
-<summary>Run the models as the app (<code>spn</code>)</summary>
+<summary>Use your own sign-in instead (<code>signin</code>)</summary>
 
-Use this when the models shouldn't depend on one person. It needs:
-
-* Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app.
-* The app as **Viewer** on the workspace: **Manage access > Add people or groups**.
-
-Then run with `CONNECTION_MODE = 'spn'`. After rotating the client secret, rerun with `DEPLOY = False`.
+Use this only if the admin setting above can't be turned on. The first refresh stops with *Sign in once* and a link. Open it (the model's settings page), expand **Gateway and cloud connections** (or **Data source credentials**) **> Edit credentials**, pick **OAuth2** and **Sign in**, for each model it names. Then run the notebook again with `DEPLOY = False`. Refreshes keep working while you have access; if you leave, a colleague opens each model > **Settings > Take over** and signs in again.
 
 </details>
 
-**Run it again only when** you rotated the secret with `spn` (`DEPLOY = False`), or after `npm run deploy` sent changed model files (a newer repo version, or a new `lakehouse.sqlEndpoint`). Daily refreshes are done by the orchestrator.
+**Run it again only when** you rotated the client secret (`DEPLOY = False`), or after `npm run deploy` sent changed model files (a newer repo version, or a new `lakehouse.sqlEndpoint`). Daily refreshes are done by the orchestrator.
 
 The models are normal Fabric semantic models: build Power BI reports on them, use them with Copilot in Power BI or a data agent, or query them with DAX. To review one before deploying, open `out/models/<model>/relationships.txt` or `model.bim` on your PC.
 
