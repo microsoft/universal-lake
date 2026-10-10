@@ -8,7 +8,9 @@ Build **one Microsoft Fabric Lakehouse** that holds your Microsoft 365 Copilot d
 * **Build your own analytics and observability foundation.** All the data sits in one place you own, ready for your own reports, Fabric apps, data agents or plain SQL.
 * **Know exactly what's going on.** Every step is a notebook you can open, read, change and rerun, so you can customise what's collected and how it's shaped.
 
-**Fair warning: this is flat-pack furniture.** Think of it as assembling an IKEA wardrobe. You unbox the parts, gather the tools, do one step, then check the manual for the next. There's no single "install" button, and at some point you'll hold a piece up and wonder which way round it goes. That's the trade: it takes a little longer than a one-click install, but at the end you know where every shelf and screw is, and you can move them. When something fails, you can see which step, which source and which dates, and rerun just that.
+**Fair warning: this is flat-pack furniture.** Setting it up feels a lot like assembling an IKEA wardrobe. You unbox everything, lay the parts out on the floor, find the tools (the Allen key is in here somewhere), do step one, then flip to the manual for step two. Repeat. There's no "install" button, and at some point you'll be convinced a part is missing (it isn't; check [Troubleshooting](TROUBLESHOOTING.md)).
+
+The payoff: when you're done it stands up straight, you know where every shelf and screw goes, and you can add drawers or move shelves whenever you like. And unlike the wardrobe, if a step goes wrong you don't have to take the whole thing apart. You can see which step, which source and which dates failed, and redo just that one.
 
 **You end up with**
 
