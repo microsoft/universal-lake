@@ -122,7 +122,7 @@ They ask Microsoft's APIs for data a few requests at a time, stay within Purview
 
 Everything is in this repo. `notebooks/` holds the ingester and processor notebooks, `models/` the semantic model definitions (`.bim`), and `scripts/build/` the code that fills in your settings. `npm run all` turns them into the files you import. The `Lake_*` notebooks (sources in `notebook-src/`) set up the Lakehouse, check credentials, sort tables into layers, deploy the models and run everything in order.
 
-To take a newer version of this repo: `git pull`, run `npm run all`, re-import what it says changed ([step 4](04-import/README.md#re-building-later)), then run `Lake_Deploy_Models` and `Lake_Orchestrator`.
+To take a newer version of this repo: `git pull`, run `npm run all`, re-import what it says changed ([step 4](04-import/README.md#re-building-later)), then run `Lake_Deploy_Models` (to update the models) and `Lake_Orchestrator`.
 
 ## Keeping IDs and secrets out of the repo
 

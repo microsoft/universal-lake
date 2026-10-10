@@ -15,6 +15,7 @@
 # | Report privacy | Usage reports show real names, so they join to org data | M365 admin centre > Settings > Org settings > Reports: turn off concealment |
 # | Azure | The app can read the subscription(s) for Azure AI spend | Give the app Reader, Cost Management Reader and Monitoring Reader |
 # | Dataverse | The app can read conversation transcripts | Add the app as an application user with the Bot Transcript Viewer role |
+# | Fabric (models) | The app is on the workspace and may call Fabric, so the models refresh unattended | A Fabric admin allows *Service principals can call Fabric public APIs* for the app (see the message) |
 
 # %% [parameters]
 TENANT_ID = ''
@@ -31,6 +32,7 @@ STRICT = True                   # raise at the end if any required check failed
 # %%
 import base64
 import json
+import time
 import requests
 
 modules = {'copilotInteractions' if m.strip() == 'core' else m.strip() for m in MODULES.split(',') if m.strip()}
@@ -182,6 +184,40 @@ if secret and envs and 'agentEvaluator' in modules:
             check(f'Dataverse {env}: token', False, str(e))
 elif 'agentEvaluator' in modules:
     print('SKIP Dataverse checks: no DATAVERSE_URLS')
+
+# %% [markdown]
+# ## Fabric: unattended model refresh
+#
+# The semantic models read the Lakehouse as the app, so nobody has to sign in on each model. That needs the app on
+# this workspace (added here as **Viewer**) and the tenant setting *Service principals can call Fabric public APIs*.
+# Only a Fabric admin can turn that on; this check tells you early instead of at the first refresh.
+
+# %%
+if secret:
+    try:
+        ws = notebookutils.runtime.context['currentWorkspaceId']
+        fabric_api = 'https://api.fabric.microsoft.com/v1'
+        me = {'Authorization': 'Bearer ' + notebookutils.credentials.getToken('pbi')}
+        fabric = app_token('https://api.fabric.microsoft.com/.default')
+        oid = claims(fabric)['oid']
+        r = requests.get(f'{fabric_api}/workspaces/{ws}/roleAssignments', headers=me, timeout=30)
+        r.raise_for_status()
+        if not any((a.get('principal') or {}).get('id') == oid for a in r.json().get('value', [])):
+            r = requests.post(f'{fabric_api}/workspaces/{ws}/roleAssignments', headers=me, timeout=30,
+                              json={'principal': {'id': oid, 'type': 'ServicePrincipal'}, 'role': 'Viewer'})
+            if r.status_code not in (200, 201, 409):
+                raise RuntimeError(f'HTTP {r.status_code} adding the app: {r.text[:200]}')
+            time.sleep(10)
+        check('App on the workspace', True, 'Viewer (or higher)')
+        r = requests.get(f'{fabric_api}/workspaces/{ws}', timeout=30, headers={'Authorization': 'Bearer ' + fabric})
+        check('App can call Fabric (unattended model refresh)', r.status_code == 200,
+              '' if r.status_code == 200 else
+              f'HTTP {r.status_code}. Ask a Fabric admin: Admin portal > Tenant settings > Developer settings > '
+              '"Service principals can call Fabric public APIs" > Enabled, for the app or a security group it is in. '
+              'Until then the models need a one-time sign-in each (07-semantic-model/README.md).', required=False)
+    except Exception as e:
+        check('App can call Fabric (unattended model refresh)', False,
+              f'{str(e)[:300]}. You need Admin or Member on the workspace to add the app.', required=False)
 
 # %% [markdown]
 # ## Result

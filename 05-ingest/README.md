@@ -8,7 +8,7 @@ One notebook, `Lake_Orchestrator`, runs every ingester for the sources you picke
 2. In the first cell, change one line: `RUN_MODE = 'first_load'`.
 3. **Run all**. Note the `RUN_ID` it prints.
 
-That's it. Leave the other settings as they are. The model refresh steps show `SKIP` for now; they start working after step 7.
+That's it. Leave the other settings as they are. The run ends by creating the semantic models and refreshing them; nobody needs to sign in.
 
 Optional: set `DRY_RUN = True` first to only print the plan (which steps, which date ranges) without running anything.
 
@@ -29,7 +29,7 @@ You don't need to pick these; they run automatically. The names show up in the p
 | 9 | `transcripts` | Copilot Studio transcripts | First load: `backfillDays`; daily: 14 days | agentEvaluator |
 | 10–12 | `azure_ai`, `studio`, `viva` | Azure AI cost; Studio and Cowork credits | Azure: 90 days; others: every uploaded file | consumption |
 
-After these come `promote` ([step 6](../06-process/README.md)) and the model refreshes. Steps for sources you didn't pick show `SKIP`.
+After these come `promote` ([step 6](../06-process/README.md)), `models` (creates and connects the semantic models, [step 7](../07-semantic-model/README.md)) and the model refreshes. Steps for sources you didn't pick show `SKIP`.
 
 **Workday only**: run `Copilot_Org_Data_Workday_Lander` by hand after uploading the extract, then `org_data`.
 

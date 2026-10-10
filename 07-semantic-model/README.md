@@ -1,6 +1,6 @@
 # Step 7: Semantic models
 
-`Lake_Deploy_Models` creates the semantic models from the files you uploaded in [step 4.5](../04-import/README.md#45-upload-the-model-definitions), connects them to the gold tables and refreshes them. The tables and relationships come from the definitions in [models/](../models).
+Your [step 5](../05-ingest/README.md) run already created the semantic models, connected them and refreshed them: its `models` step runs `Lake_Deploy_Models` for you, using the files you uploaded in [step 4.5](../04-import/README.md#45-upload-the-model-definitions). Nobody signs in on the models. This page is for checking them and for the rare times you run `Lake_Deploy_Models` yourself. The tables and relationships come from the definitions in [models/](../models).
 
 | Model | Display name | Tables | Relationships | Module |
 |---|---|---|---|---|
@@ -12,16 +12,13 @@ Models for modules you didn't pick are skipped. If models with these names alrea
 
 To review a model before deploying, open `out/models/<model>/relationships.txt` or `model.bim` on your PC.
 
-## Run it
+## Check them
 
-1. Make sure your [step 5](../05-ingest/README.md) run succeeded, so gold has data. Otherwise the refresh fails with *table … not found*.
-2. Open `Lake_Deploy_Models` > **Run all**.
+In the step 5 run output, `models` and the `refresh_*` steps should say `succeeded`. The models appear in the workspace under the display names above.
 
-For each model it: finds or creates it, replaces its definition, connects it, refreshes it, and counts rows per table. A table with `0` rows means its ingester loaded nothing.
+**How it stays unattended.** The `models` step creates a cloud connection signed in as the app (with its secret) and binds each model to it, so refreshes need nobody signed in. It runs on every orchestrator run, so a rotated secret is picked up automatically. It needs one admin setting: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (on by default in tenants created since mid-2025). `Lake_Validate_Credentials` ([step 2](../02-permissions/README.md)) warns you if it is off.
 
-**Unattended by default.** When the app's secret is available (Key Vault, or `CLIENT_SECRET` which the build fills in when you have no vault), the notebook adds the app to the workspace as **Viewer**, creates a cloud connection signed in as the app and binds each model to it. The orchestrator's refreshes then run with nobody signed in. It needs one admin setting: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (on by default in tenants created since mid-2025). If it is off, the notebook says so.
-
-The model IDs are saved in `ops.config`. **The orchestrator's refresh steps are skipped until this notebook has run once.**
+If `models` failed or the refreshes say *credentials*, fix the setting and rerun with `STEPS='models,refresh_universal'` (add the other `refresh_*` steps you use).
 
 ## Parameters
 
@@ -29,18 +26,21 @@ The model IDs are saved in `ops.config`. **The orchestrator's refresh steps are 
 |---|---|---|
 | `MODELS` | all three | Only some, e.g. `'universal'` |
 | `CONNECTION_MODE` | `auto` | `auto`: the app when its secret is available, else your sign-in. `spn`: always the app. `signin`: your sign-in (below). `existing`: a connection you made yourself, in `CONNECTION_ID`. |
-| `DEPLOY` | `True` | `False`: don't change the definition; only reconnect, refresh and count |
+| `DEPLOY` | `True` | `False`: don't change the definition; only reconnect, refresh and count. `'missing'`: create missing models only (what the orchestrator uses) |
 | `REFRESH` | `True` | `False`: deploy only |
 | `REFRESH_TIMEOUT_MIN` | 60 | Raise for a big first refresh |
 
-**Optional: use your own sign-in (`signin`).** Only if the admin setting can't be turned on. The first refresh stops with *Sign in once* and a link. Open it (the model's settings page), expand **Gateway and cloud connections** (or **Data source credentials**) **> Edit credentials**, pick **OAuth2** and **Sign in**, for each model it names. Then run the notebook again with `DEPLOY = False`. If you leave, a colleague opens each model > **Settings > Take over** and signs in again.
+<details><summary>Fallback: only if the admin setting can't be turned on</summary>
 
-## When to run it again
+Run `Lake_Deploy_Models` with `CONNECTION_MODE = 'signin'`. It prints each model's settings link. There: **Gateway and cloud connections > Maps to > Create a connection**, pick **OAuth 2.0 > Edit credentials** (a sign-in window opens), then **Create > Apply**. Do it once per model. If you leave, a colleague opens each model > **Settings > Take over** and signs in again.
 
-Daily refreshes are done by the orchestrator, not this notebook. Run `Lake_Deploy_Models` again only when:
+</details>
 
-* you rotated the client secret: `DEPLOY = False`;
-* you changed the source version or `lakehouse.sqlEndpoint`: `npm run models`, re-upload `out/models`, then run it.
+## Run `Lake_Deploy_Models` yourself only to
+
+* update the models after you changed the source version or `lakehouse.sqlEndpoint`: `npm run models`, re-upload `out/models`, then **Run all** (the orchestrator only creates missing models, it doesn't update them).
+
+Daily refreshes and reconnecting after a secret rotation are done by the orchestrator.
 
 ## Use the models
 
