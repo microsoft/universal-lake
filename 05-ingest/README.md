@@ -4,7 +4,7 @@ One notebook, `Lake_Orchestrator`, runs every ingester for the sources you picke
 
 ## Run it
 
-**From your PC:** `npm run deploy -- --run first_load` starts it and prints a link to the notebook. The link opens the notebook, not the run: to watch the run, choose **Run > Recent runs** and open the newest one. Each cell shows whether it has run and its output so far. The **Monitor** hub lists the run too. Or in Fabric:
+**From your PC:** `npm run deploy -- --run first_load` starts it and prints a link to the notebook. The link opens the notebook, not the run: to watch the run, open the **Run** tab at the top of the notebook (not the **Run all** menu), choose **Recent runs** and open the newest one. Each cell shows whether it has run and its output so far. The **Monitor** hub lists the run too. Or in Fabric:
 
 1. Open `Lake_Orchestrator` (deploy printed a link).
 2. In the first cell, change one line: `RUN_MODE = 'first_load'`.
