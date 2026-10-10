@@ -9,6 +9,9 @@
   // ---------- Required: from step 2 (app registration Overview page) ----------
   "tenantId": "<tenant-guid>",                      // Directory (tenant) ID
   "appId": "<app-registration-client-id>",          // Application (client) ID
+  // Only if Fabric is in a different tenant from the app and your data (e.g. a demo tenant):
+  // the Fabric tenant's ID or domain (e.g. "contoso.com"). Leave "" when it's the same tenant.
+  "fabricTenantId": "",
 
   // ---------- Client secret: pick ONE of the two ways (step 2.2) ----------
   // Recommended: put the secret in Key Vault, set keyVault.uri, and leave clientSecret as "".

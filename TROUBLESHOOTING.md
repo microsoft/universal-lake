@@ -11,7 +11,8 @@ The fixes for things that can go wrong while setting up. For failed daily runs, 
 | No browser opens, or you're on a remote PC | `npm run deploy -- --device-code` and enter the code it prints at the link it gives. |
 | Sign-in says the app is blocked or needs admin approval | Your tenant blocks the Azure CLI app. Ask an admin to allow it, or set up by hand ([below](#setting-up-by-hand)). |
 | `401` or `403` from Fabric | You need **Contributor** or above on the workspace, and the workspace needs a Fabric capacity or trial ([step 1](01-fabric/README.md#12-create-the-workspace)). If you have it, a Fabric admin may have turned off *Users can create Fabric items* or API access for you in the tenant settings. |
-| *No workspace named ...* | Check `workspace.name` (it must match exactly) and that you can see the workspace in the Fabric portal. |
+| *No workspace named ...* | Check `workspace.name` (it must match exactly) and that you can see the workspace in the Fabric portal. If the workspace is in a different tenant from the app (e.g. the data is in a demo tenant), set `fabricTenantId` ([3.1](03-configure/README.md#31-finish-configjson)). |
+| Sign-in says your account doesn't exist in the tenant | Deploy signed you in to the app's tenant. If Fabric is in another tenant, set `fabricTenantId` to it ([3.1](03-configure/README.md#31-finish-configjson)). |
 | *More than one workspace is named ...* | Set `workspace.id` (the GUID after `/groups/` in the workspace URL). |
 | *The Lakehouse SQL analytics endpoint is still being created* | Wait a minute, run deploy again. |
 | *Could not update config.json automatically* | Paste the three values it prints into `config.json`, deploy again. |

@@ -123,7 +123,8 @@ function build() {
 
 // ---------- Sign-in (browser with PKCE, or device code) ----------
 
-const tenant = cfg.tenantId;
+// You sign in to the tenant that holds the Fabric workspace. That is the app's tenant unless fabricTenantId says otherwise.
+const tenant = filled(cfg.fabricTenantId) ? cfg.fabricTenantId : cfg.tenantId;
 const tokenUrl = () => `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`;
 const SCOPE_FABRIC = 'https://api.fabric.microsoft.com/.default offline_access';
 const SCOPE_STORAGE = 'https://storage.azure.com/.default offline_access';
@@ -394,7 +395,7 @@ if (DRY_RUN) {
   console.log('Dry run: nothing is sent to Fabric.\n');
   console.log(`Workspace: ${filled(ws.id) ? ws.id : filled(ws.name) ? `"${ws.name}" (found by name)` : 'NOT SET: set workspace.name'}`);
   console.log(`Lakehouse: ${cfg.lakehouse?.name || 'UniversalLake_LH'}${filled(cfg.lakehouse?.id) ? ` (${cfg.lakehouse.id})` : ' (created if it does not exist)'}`);
-  console.log(`Sign-in:   tenant ${filled(tenant) ? tenant : 'NOT SET: set tenantId'}`);
+  console.log(`Sign-in:   tenant ${filled(tenant) ? tenant : 'NOT SET: set tenantId'}${filled(cfg.fabricTenantId) ? ' (fabricTenantId; the app and data stay in ' + cfg.tenantId + ')' : ''}`);
   printExports(report);
   console.log('\nRun npm run deploy (without --dry-run) to deploy.');
   process.exit(0);
