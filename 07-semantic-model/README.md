@@ -16,11 +16,10 @@ To review a model before deploying, open `out/models/<model>/relationships.txt` 
 
 1. Make sure your [step 5](../05-ingest/README.md) run succeeded, so gold has data. Otherwise the refresh fails with *table … not found*.
 2. Open `Lake_Deploy_Models` > **Run all**.
-3. **First time only:** the refresh stops with *Sign in once* and a link. Open the link (the model's settings page), expand **Data source credentials > Edit credentials**, pick **OAuth2** and **Sign in**. Do this for each model it names, then run the notebook again with `DEPLOY = False`.
 
-For each model it: finds or creates it, replaces its definition, refreshes it, and counts rows per table. A table with `0` rows means its ingester loaded nothing.
+For each model it: finds or creates it, replaces its definition, connects it, refreshes it, and counts rows per table. A table with `0` rows means its ingester loaded nothing.
 
-The models read the gold tables with **your** sign-in, so no admin setting or app role is needed. Fabric keeps that sign-in working as long as the models refresh and you keep access to the workspace. If you leave, a colleague opens each model > **Settings > Take over** and signs in the same way.
+**Unattended by default.** When the app's secret is available (Key Vault, or `CLIENT_SECRET` which the build fills in when you have no vault), the notebook adds the app to the workspace as **Viewer**, creates a cloud connection signed in as the app and binds each model to it. The orchestrator's refreshes then run with nobody signed in. It needs one admin setting: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (on by default in tenants created since mid-2025). If it is off, the notebook says so.
 
 The model IDs are saved in `ops.config`. **The orchestrator's refresh steps are skipped until this notebook has run once.**
 
@@ -29,23 +28,18 @@ The model IDs are saved in `ops.config`. **The orchestrator's refresh steps are 
 | Parameter | Default | Use |
 |---|---|---|
 | `MODELS` | all three | Only some, e.g. `'universal'` |
-| `CONNECTION_MODE` | `signin` | `signin`: reads with your sign-in, given once (above). `spn`: reads as the app, for unattended production (see below). `existing`: a connection you made yourself, in `CONNECTION_ID`. |
+| `CONNECTION_MODE` | `auto` | `auto`: the app when its secret is available, else your sign-in. `spn`: always the app. `signin`: your sign-in (below). `existing`: a connection you made yourself, in `CONNECTION_ID`. |
 | `DEPLOY` | `True` | `False`: don't change the definition; only reconnect, refresh and count |
 | `REFRESH` | `True` | `False`: deploy only |
 | `REFRESH_TIMEOUT_MIN` | 60 | Raise for a big first refresh |
 
-**Optional: run the models as the app (`spn`).** Use this when the models shouldn't depend on one person. It needs two extra things, which is why it isn't the default:
-
-* Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (on by default in tenants created since mid-2025; existing tenants keep their old value, and a trial doesn't change it).
-* The app as **Viewer** on the workspace: **Manage access > Add people or groups**.
-
-Then run with `CONNECTION_MODE = 'spn'`. It uses the same client secret as the ingesters; after rotating it, rerun with `DEPLOY = False`.
+**Optional: use your own sign-in (`signin`).** Only if the admin setting can't be turned on. The first refresh stops with *Sign in once* and a link. Open it (the model's settings page), expand **Gateway and cloud connections** (or **Data source credentials**) **> Edit credentials**, pick **OAuth2** and **Sign in**, for each model it names. Then run the notebook again with `DEPLOY = False`. If you leave, a colleague opens each model > **Settings > Take over** and signs in again.
 
 ## When to run it again
 
 Daily refreshes are done by the orchestrator, not this notebook. Run `Lake_Deploy_Models` again only when:
 
-* you use `spn` and rotated the client secret: `DEPLOY = False`;
+* you rotated the client secret: `DEPLOY = False`;
 * you changed the source version or `lakehouse.sqlEndpoint`: `npm run models`, re-upload `out/models`, then run it.
 
 ## Use the models
