@@ -10,7 +10,7 @@ Build **one Microsoft Fabric Lakehouse** that holds your Microsoft 365 Copilot d
 
 **Fair warning: this is flat-pack furniture.** Setting it up feels a lot like assembling an IKEA wardrobe. You unbox everything, lay the parts out on the floor, find the tools (the Allen key is in here somewhere), do step one, then flip to the manual for step two. Repeat. There's no "install" button, and at some point you'll be convinced a part is missing (it isn't; check the step's README).
 
-The payoff: when you're done it stands up straight, you know where every shelf and screw goes, and you can add drawers or move shelves whenever you like. And unlike the wardrobe, if a step goes wrong you don't have to take the whole thing apart. You can see which step, which source and which dates failed, and redo just that one.
+The payoff: when it is done, you know exactly how this is put together. If a step goes wrong, you don't have to take the whole thing apart. You can see which step, which cell, which source and which dates failed, and redo just that one.
 
 **You end up with**
 
