@@ -161,6 +161,20 @@ def ensure_connection():
     return created['id']
 
 
+def find_signin_connection():
+    """The sign-in (OAuth2) connection to this Lakehouse that someone created once, so every model can reuse it."""
+    known = CONNECTION_ID or cfg('connection_id')
+    target = f'{server};{database}'.lower()
+    for c in rest_list('/connections'):
+        details = c.get('connectionDetails') or {}
+        if known and c['id'] == known:
+            return c
+        if (not known and str(details.get('type')).upper() == 'SQL' and str(details.get('path')).lower() == target
+                and (c.get('credentialDetails') or {}).get('credentialType') == 'OAuth2'):
+            return c
+    return None
+
+
 def bind(model_id, connection_id):
     sources = rest('GET', f'{PBI_API}/groups/{ws}/datasets/{model_id}/datasources').json().get('value', [])
     sql = next((d.get('connectionDetails') for d in sources if str(d.get('datasourceType')).lower() == 'sql'), None) or {}
@@ -250,11 +264,16 @@ for i, key in enumerate(keys, 1):
                 print(f'WARNING: could not connect as the app ({str(e)[:500]}). Usually the Fabric admin setting '
                       '"Service principals can call Fabric public APIs" is off. Falling back to your own sign-in.')
         if CONNECTION_MODE not in ('spn', 'existing'):
-            print('Reads the Lakehouse with your sign-in (CONNECTION_MODE = signin). Refreshes fail until you sign in '
-                  f'once: https://app.powerbi.com/groups/{ws}/settings/datasets/{model_id} > Gateway and cloud connections '
-                  '> Maps to > Create a connection > OAuth 2.0 > Edit credentials (a sign-in window opens) > Create > Apply. '
-                  'Once a Fabric admin turns on "Service principals can call Fabric public APIs", the next run '
-                  'connects as the app instead and this is no longer needed.')
+            signin_conn = find_signin_connection()
+            if signin_conn:
+                bind(model_id, signin_conn['id'])
+                cfg_set({'connection_id': signin_conn['id']})
+                print(f'Bound to your sign-in connection "{signin_conn.get("displayName")}" ({signin_conn["id"]})')
+            else:
+                print('Reads the Lakehouse with your sign-in (CONNECTION_MODE = signin). Refreshes fail until you sign in '
+                      f'once: https://app.powerbi.com/groups/{ws}/settings/datasets/{model_id} > Gateway and cloud connections '
+                      '> Maps to > Create a connection > OAuth 2.0 > Edit credentials (a sign-in window opens) > Create > Apply. '
+                      'You do this once for the workspace: later runs find that connection and attach every model to it.')
 
         print('Relationships:')
         for r in bim['model'].get('relationships', []):
@@ -272,7 +291,8 @@ for i, key in enumerate(keys, 1):
                 raise RuntimeError(
                     f'Sign in once: open https://app.powerbi.com/groups/{ws}/settings/datasets/{model_id} , '
                     'then Gateway and cloud connections (or Data source credentials) > Edit credentials > OAuth2 > '
-                    'Sign in. Then rerun this notebook with DEPLOY = False. You do this once per model. '
+                    'Sign in. Then rerun this notebook with DEPLOY = False. You do this once: later runs attach every model '
+                    'to that connection. '
                     'Or ask a Fabric admin to turn on "Service principals can call Fabric public APIs" so the app connects instead.')
             if state != 'Completed':
                 raise RuntimeError(f'Refresh {state}: {json.dumps(detail.get("serviceExceptionJson") or detail)[:3000]}')

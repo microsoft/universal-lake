@@ -18,7 +18,7 @@ In the step 5 run output, `models` and the `refresh_*` steps should say `succeed
 
 **How it stays unattended.** The `models` step creates a cloud connection signed in as the app (with its secret) and binds each model to it, so refreshes need nobody signed in. It runs on every orchestrator run, so a rotated secret is picked up automatically. It needs one admin setting: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (on by default in tenants created since mid-2025). It is on by default, so usually there's nothing to do; `Lake_Validate_Credentials` ([step 2](../02-permissions/README.md)) warns you if it is off.
 
-If the setting is off, the `models` step falls back to your own sign-in by itself and prints a link per model; the refresh steps fail with *credentials* and print the same link. Either ask your Fabric admin to turn it on (the next run connects as the app), or sign in once per model (below).
+If the setting is off, the `models` step falls back to your own sign-in by itself and prints a link per model; the refresh steps fail with *credentials* and print the same link. Either ask your Fabric admin to turn it on (the next run connects as the app), or sign in once (below).
 
 ## Parameters
 
@@ -30,9 +30,9 @@ If the setting is off, the `models` step falls back to your own sign-in by itsel
 | `REFRESH` | `True` | `False`: deploy only |
 | `REFRESH_TIMEOUT_MIN` | 60 | Raise for a big first refresh |
 
-<details><summary>If the setting is off: sign in once per model</summary>
+<details><summary>If the setting is off: sign in once</summary>
 
-Open each printed link (the model's settings page). There: **Gateway and cloud connections > Maps to > Create a connection**, pick **OAuth 2.0 > Edit credentials** (a sign-in window opens), then **Create > Apply**. Do it once per model. If you leave, a colleague opens each model > **Settings > Take over** and signs in again. Then rerun the orchestrator with `STEPS='refresh_universal'` (plus the other `refresh_*` steps you use).
+Open one printed link (any model's settings page). There: **Gateway and cloud connections > Maps to > Create a connection**, pick **OAuth 2.0 > Edit credentials** (a sign-in window opens), then **Create > Apply**. You do this once for the workspace: every run (and every redeploy) finds that sign-in connection and attaches all the models to it, so new or recreated models need nothing. Refreshes keep working while your account has access to the workspace. If you leave, a colleague creates their own connection the same way, and deletes yours under Settings > **Manage connections and gateways**. Then rerun the orchestrator with `STEPS='refresh_universal'` (plus the other `refresh_*` steps you use).
 
 </details>
 
