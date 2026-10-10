@@ -2,7 +2,8 @@
 //
 //   npm run deploy                     sign in, then do steps 1-6 below
 //   npm run deploy -- --dry-run        check config.json and your exports folder only (no sign-in, nothing sent)
-//   npm run deploy -- --run first_load also start Lake_Orchestrator's first load when setup passes
+//   npm run deploy -- --run first_load also start Lake_Orchestrator's first load when setup passes, and say when it ends
+//   npm run deploy -- --watch          only follow the latest Lake_Orchestrator run and say when it ends (deploys nothing)
 //   npm run deploy -- --device-code    sign in with a code instead of a browser window
 //   npm run deploy -- --reupload-csv   upload CSVs again even if this Lakehouse already has them
 //   npm run deploy -- --overwrite      replace same-named notebooks this PC didn't deploy (e.g. from a manual import)
@@ -214,14 +215,25 @@ async function confirmFabricTenant() {
   console.log(`Saved fabricTenantId = ${value} in config.json; you won't be asked again.`);
 }
 
-let fabricToken, storageToken;
+let fabricToken, storageToken, refreshToken, fabricExpires = 0;
 async function signIn() {
   if (!filled(tenant)) fail('tenantId is not set in config.json (step 2).');
   await confirmFabricTenant();
   const t = FLAGS.has('--device-code') ? await signInDeviceCode() : await signInBrowser();
   fabricToken = t.access_token;
+  refreshToken = t.refresh_token;
+  fabricExpires = Date.now() + (t.expires_in ?? 3600) * 1000;
   storageToken = (await tokenRequest({ grant_type: 'refresh_token', refresh_token: t.refresh_token, scope: SCOPE_STORAGE })).access_token;
   console.log('Signed in.');
+}
+
+// A run can outlast the sign-in token (about an hour), so the watch loop renews it.
+async function renewFabricToken() {
+  if (Date.now() < fabricExpires - 5 * 60_000) return;
+  const t = await tokenRequest({ grant_type: 'refresh_token', refresh_token: refreshToken, scope: SCOPE_FABRIC });
+  fabricToken = t.access_token;
+  if (t.refresh_token) refreshToken = t.refresh_token;
+  fabricExpires = Date.now() + (t.expires_in ?? 3600) * 1000;
 }
 
 // ---------- Fabric REST ----------
@@ -407,7 +419,7 @@ async function runNotebook(ws, id, parameters, { wait }) {
   const body = parameters ? { executionData: { parameters } } : undefined;
   const res = await call('POST', `/workspaces/${ws.id}/items/${id}/jobs/instances?jobType=RunNotebook`, { body });
   const location = res.headers.get('location');
-  if (!wait || !location) return null;
+  if (!wait || !location) return location;
   const started = Date.now();
   let last = '';
   for (;;) {
@@ -417,6 +429,52 @@ async function runNotebook(ws, id, parameters, { wait }) {
     if (['Completed', 'Failed', 'Cancelled', 'Deduped'].includes(job.status)) return job;
     if (Date.now() - started > 45 * 60_000) return { status: 'StillRunning' };
   }
+}
+
+const DONE = ['Completed', 'Failed', 'Cancelled', 'Deduped'];
+const duration = (job, fallbackStart) => {
+  const start = Date.parse(job.startTimeUtc ?? '') || fallbackStart;
+  const end = Date.parse(job.endTimeUtc ?? '') || Date.now();
+  const m = Math.max(0, Math.round((end - start) / 60_000));
+  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+};
+const clock = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+// Polls the orchestrator run until it ends, then says how it ended and what to do next.
+async function watchOrchestrator(ws, id, location) {
+  console.log('\nWatching the run; this window says when it ends. You can close it or press Ctrl+C at any time: the run keeps');
+  console.log('going in Fabric, and npm run deploy -- --watch picks it up again.');
+  const started = Date.now();
+  let job, last = '', lastNote = 0;
+  for (;;) {
+    try {
+      await renewFabricToken();
+      job = await (await call('GET', location)).json();
+    } catch (e) {
+      console.log(`  ${clock()} could not check the run (${e.message.slice(0, 160)}); trying again in a minute`);
+      await sleep(60_000);
+      continue;
+    }
+    if (job.status !== last || Date.now() - lastNote >= 15 * 60_000) {
+      console.log(`  ${clock()} ${job.status === 'InProgress' ? 'running' : job.status} (${duration(job, started)})`);
+      last = job.status; lastNote = Date.now();
+    }
+    if (DONE.includes(job.status)) break;
+    await sleep(60_000);
+  }
+  const total = duration(job, started);
+  process.stdout.write('\x07');
+  if (job.status === 'Completed') {
+    console.log(`\nLake_Orchestrator finished after ${total}: every step succeeded and the semantic models are refreshed.`);
+    console.log('Next: step 6, check the data (06-models/README.md).');
+  } else {
+    const why = job.failureReason?.message ? `: ${job.failureReason.message.slice(0, 600)}` : '';
+    console.log(`\nLake_Orchestrator ${job.status === 'Failed' ? 'failed' : `ended as ${job.status}`} after ${total}${why}`);
+    console.log('The run\'s output names the failed steps. Open the notebook, then the Run tab > Recent runs > this run:');
+    console.log(`  ${notebookLink(ws, id)}`);
+    console.log("To retry only what failed, see step 5, 'Retry only what failed' (05-ingest/README.md).");
+  }
+  return job;
 }
 
 // ---------- Main ----------
@@ -431,6 +489,19 @@ if (DRY_RUN) {
   printExports(report);
   console.log('\nRun npm run deploy (without --dry-run) to deploy.');
   process.exit(0);
+}
+
+if (FLAGS.has('--watch')) {
+  await signIn();
+  const ws = await findWorkspace();
+  const orch = (await list(`/workspaces/${ws.id}/notebooks`)).find((n) => n.displayName === 'Lake_Orchestrator');
+  if (!orch) fail(`No Lake_Orchestrator notebook in workspace ${ws.displayName}. Run npm run deploy first.`);
+  const runs = await list(`/workspaces/${ws.id}/items/${orch.id}/jobs/instances`);
+  const latest = runs.sort((a, b) => Date.parse(b.startTimeUtc ?? 0) - Date.parse(a.startTimeUtc ?? 0))[0];
+  if (!latest) fail('Lake_Orchestrator has not been run yet. Start it with npm run deploy -- --run first_load, or Run all in Fabric.');
+  console.log(`Latest Lake_Orchestrator run started ${new Date(latest.startTimeUtc).toLocaleString()}.`);
+  const job = await watchOrchestrator(ws, orch.id, `/workspaces/${ws.id}/items/${orch.id}/jobs/instances/${latest.id}`);
+  process.exit(job.status === 'Completed' ? 0 : 1);
 }
 
 printExports(report);
@@ -462,10 +533,14 @@ console.log('Lake_Setup passed: the Lakehouse is ready and the app has the permi
 
 if (RUN === 'first_load') {
   const orch = ids.Lake_Orchestrator;
-  await runNotebook(ws, orch, { RUN_MODE: { value: 'first_load', type: 'string' } }, { wait: false });
+  const location = await runNotebook(ws, orch, { RUN_MODE: { value: 'first_load', type: 'string' } }, { wait: false });
   console.log(`\nStarted Lake_Orchestrator with RUN_MODE = 'first_load'. It can take hours. Open the notebook:\n  ${notebookLink(ws, orch)}`);
-  console.log("This link opens the notebook, not the run. To watch the run, open the Run tab at the top of the notebook (not the Run all menu), choose Recent runs and open the newest one:");
+  console.log("This link opens the notebook, not the run. To see each step, open the Run tab at the top of the notebook (not the Run all menu), choose Recent runs and open the newest one:");
   console.log("each cell shows whether it has run and its output so far. The Monitor hub (left bar in Fabric) lists the run too.");
+  if (location) {
+    const run = await watchOrchestrator(ws, orch, location);
+    process.exit(run.status === 'Completed' ? 0 : 1);
+  }
 } else {
   console.log(`\nNext (step 5): open Lake_Orchestrator, set RUN_MODE = 'first_load' and Run all, or run npm run deploy -- --run first_load.\n  ${notebookLink(ws, ids.Lake_Orchestrator)}`);
 }
