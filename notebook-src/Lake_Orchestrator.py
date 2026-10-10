@@ -61,6 +61,25 @@ RUN_ID = RUN_ID or new_run_id(RUN_MODE)
 print(f'run_id={RUN_ID}  mode={RUN_MODE}  scale={SCALE}  backfill_days={BACKFILL_DAYS}')
 print(f'modules={sorted(MODULES)}')
 
+import os
+from datetime import datetime, timezone
+RUN_STATUS_FILE = '/lakehouse/default/Files/universal_lake/runs/latest.json'
+RUN_STARTED = datetime.now(timezone.utc).isoformat()
+
+
+def write_run_status(status, **fields):
+    """npm run deploy -- --watch reads this file to say in the terminal which steps failed and why."""
+    try:
+        os.makedirs(os.path.dirname(RUN_STATUS_FILE), exist_ok=True)
+        with open(RUN_STATUS_FILE, 'w') as f:
+            json.dump({'run_id': RUN_ID, 'run_mode': RUN_MODE, 'status': status, 'started': RUN_STARTED,
+                       'updated': datetime.now(timezone.utc).isoformat(), **fields}, f, indent=2, default=str)
+    except Exception as e:
+        print(f'(could not write {RUN_STATUS_FILE}: {e})')
+
+
+write_run_status('running')
+
 # %% [markdown]
 # ## Steps
 #
@@ -349,6 +368,10 @@ summary = {'run_id': RUN_ID, 'run_mode': RUN_MODE, 'results': results,
 print(json.dumps(summary, indent=2))
 for w in csv_warnings:
     print(f'WARNING: {w}')
+write_run_status('failed' if failures else 'succeeded', results=results,
+                 failed=[{'step': n, 'status': st, 'error': (e or '')[:1500]} for n, st, e in failures],
+                 rerun=f"RUN_MODE='{RUN_MODE}', RUN_ID='{RUN_ID}', RERUN_FAILED=True" if failures else None,
+                 warnings=csv_warnings)
 if failures:
     print('\nTo re-run only what did not succeed:')
     print(f"  RUN_MODE='{RUN_MODE}', RUN_ID='{RUN_ID}', RERUN_FAILED=True")
