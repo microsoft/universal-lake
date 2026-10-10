@@ -11,12 +11,11 @@ import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGETS = {
-    "Lake_Validate_Credentials.py": "02-permissions/Lake_Validate_Credentials.ipynb",
-    "Lake_Init.py": "04-import/Lake_Init.ipynb",
-    "Lake_Promote_Medallion.py": "06-process/Lake_Promote_Medallion.ipynb",
-    "Lake_Deploy_Models.py": "07-semantic-model/Lake_Deploy_Models.ipynb",
-    "Lake_Orchestrator.py": "08-orchestrate/Lake_Orchestrator.ipynb",
-    "lake_ops.py": "08-orchestrate/lake_ops.ipynb",
+    "Lake_Setup.py": "04-deploy/Lake_Setup.ipynb",
+    "Lake_Promote_Medallion.py": "06-models/Lake_Promote_Medallion.ipynb",
+    "Lake_Deploy_Models.py": "06-models/Lake_Deploy_Models.ipynb",
+    "Lake_Orchestrator.py": "07-orchestrate/Lake_Orchestrator.ipynb",
+    "lake_ops.py": "07-orchestrate/lake_ops.ipynb",
 }
 METADATA = {
     "kernel_info": {"name": "synapse_pyspark"},
@@ -180,7 +179,7 @@ if __name__ == "__main__":
                 "default_lakehouse": lh["id"], "default_lakehouse_name": lh.get("name", ""),
                 "default_lakehouse_workspace_id": ws["id"], "known_lakehouses": [{"id": lh["id"]}]}})
             # Setup notebooks get their parameters from config.json, so nothing is copied by hand.
-            if name in ("Lake_Init.py", "Lake_Validate_Credentials.py", "Lake_Deploy_Models.py"):
+            if name in ("Lake_Setup.py", "Lake_Deploy_Models.py"):
                 filled = prefill(bound, prefill_values(cfg))
                 print(f"  out/notebooks/{pathlib.Path(target).name}: filled {', '.join(filled) or 'nothing'}")
             dest = ROOT / "out" / "notebooks" / pathlib.Path(target).name
@@ -191,4 +190,4 @@ if __name__ == "__main__":
         if inline_secret(cfg):
             print("WARNING: the client secret is written into out/notebooks (no Key Vault). Don't share or commit them.")
     else:
-        print("No filled-in config.json: notebooks are unbound; attach the Lakehouse in Fabric after import.")
+        print("No filled-in config.json: notebooks are unbound (fine for the repo copies; npm run deploy builds bound ones).")

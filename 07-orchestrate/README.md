@@ -1,11 +1,11 @@
-# Step 8: Orchestrate
+# Step 7: Orchestrate
 
 You already ran `Lake_Orchestrator` once in step 5. From now on it's the daily job: each run loads what's new, processes and promotes it, refreshes the models and runs a data check. Each step is logged separately, so you can see exactly what failed and re-run just that.
 
 ## Schedule the daily run
 
 1. Open `Lake_Orchestrator` and set the first cell back to the defaults: `RUN_MODE = 'incremental'`, `DRY_RUN = False`, `STEPS`, `RUN_ID` blank, `RERUN_FAILED = False`. **Save** (schedules use the saved values).
-2. **Run all** once by hand. This time the refresh steps run too (step 7 is done), so check they say `succeeded`.
+2. **Run all** once by hand. This time the refresh steps run too (step 6 is done), so check they say `succeeded`.
 3. **Run > Schedule** > once a day.
 
 Don't start a manual run while the scheduled one is running: they share `Files/_audit_staging`.

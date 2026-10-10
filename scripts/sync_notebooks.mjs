@@ -1,4 +1,4 @@
-// Fills this repo's notebooks (notebooks/) with the IDs from config.json, for manual import into Fabric.
+// Fills this repo's notebooks (notebooks/) with the IDs from config.json. npm run deploy uploads the result to Fabric.
 // Only the notebooks for the data sources you chose are written.
 //
 //   node scripts/sync_notebooks.mjs [--config config.json]
@@ -122,8 +122,8 @@ if (previous?.notebooks) {
   const removed = [...before.keys()].filter((k) => !after.has(k));
   const changed = [...after.keys()].filter((k) => before.has(k) && before.get(k) !== after.get(k));
   console.log(`\nSince the previous sync (${previous.head?.slice(0, 7) ?? '?'} -> ${head.slice(0, 7)}):`);
-  if (!added.length && !removed.length && !changed.length) console.log('  no notebook changed; nothing to re-import');
-  for (const k of changed) console.log(`  changed  ${k}   <- re-import`);
+  if (!added.length && !removed.length && !changed.length) console.log('  no notebook changed');
+  for (const k of changed) console.log(`  changed  ${k}`);
   for (const k of added) console.log(`  new      ${k}   <- import`);
   for (const k of removed) console.log(`  removed  ${k}   <- delete from the workspace if no longer used`);
 }

@@ -15,7 +15,7 @@
 # | `backfill` | backfill `BACKFILL_DAYS` | overwrite | last `BACKFILL_DAYS` | overwrite | widening history or repairing gaps |
 # | `incremental` | since last load + `LOOKBACK_DAYS` | merge | last 14 days | merge | the daily run |
 #
-# Re-running: see `08-orchestrate/RERUNS.md`. In short: `RERUN_FAILED = True` re-runs only the steps of `RUN_ID`
+# Re-running: see `07-orchestrate/RERUNS.md`. In short: `RERUN_FAILED = True` re-runs only the steps of `RUN_ID`
 # that did not succeed.
 
 # %% [parameters]
@@ -182,7 +182,7 @@ for src in csv_sources:
     step, folder, what = CSV_CHECKS[src]
     if step in running and not _files(folder) and not pending_uploads:
         csv_warnings.append(f"{src} is set to 'csv' but Files/{folder} is empty. Step {step} will still run, but its "
-                            f"table stays empty. Upload {what} (step 4.6), then rerun with STEPS='{step}'.")
+                            f"table stays empty. Put {what} in your exports folder and run npm run deploy, then rerun with STEPS='upload_router,{step}'.")
 print('Upload check: ' + ('all CSV sources have files.' if csv_sources and not csv_warnings
                          else 'no sources set to csv.' if not csv_sources else ''))
 for w in csv_warnings:

@@ -16,7 +16,7 @@ You do each step yourself, so when something fails you can see which step, which
 flowchart LR
   S["Data sources<br/>audit log, M365 usage reports,<br/>Entra ID, Agent 365, Dataverse,<br/>credits and cost"] --> N["Ingester notebooks<br/>(step 5)"]
   N --> L[("One Lakehouse<br/>raw → cleaned → report-ready<br/>(step 6)")]
-  L --> M["Semantic models<br/>(step 7)"]
+  L --> M["Semantic models<br/>(step 6)"]
   M -.-> U["Power BI templates,<br/>Fabric apps, agents<br/>(later, separate)"]
 ```
 
@@ -32,25 +32,26 @@ flowchart LR
 | | Minimum |
 |---|---|
 | Fabric capacity | **F2**, or a free Fabric trial. **F64+** for more than ~10,000 people or for viewers without Power BI Pro. See [step 1](01-fabric/README.md#11-pick-a-capacity). |
-| Fabric workspace | One, where you are **Admin** or **Member** |
+| Fabric workspace | One, where you are **Contributor** or above. Deploy creates the Lakehouse in it. |
 | Entra ID | Rights to register an app, and an admin who can grant consent |
 | Azure Key Vault | **Recommended** for the app's secret. No vault yet? You can put the secret in `config.json` for a first run (not recommended; see [step 2.2](02-permissions/README.md#22-store-the-client-secret)). |
 | A PC with | Git, Node.js 20.12+, Python 3.9+ (see [Before you start](#before-you-start)) |
 
 ## Before you start
 
-**How it fits together.** All your settings go in one file, `config.json`. **You don't fill it in now**: you don't have the values yet. Steps 1 to 3 produce them, and each step tells you which line to paste into:
+**How it fits together.** All your settings go in one file, `config.json`. **You don't fill it in now**: you don't have the values yet. Steps 1 to 4 produce them, and each step tells you which line to set:
 
 | Step | What you create | What goes into `config.json` |
 |---|---|---|
-| 1 | A Fabric workspace and Lakehouse | Their IDs |
+| 1 | A Fabric workspace | Its name |
 | 2 | An app registration with permissions | Its IDs and secret (or Key Vault) |
-| 3 | Your choice of data sources | `api`, `csv` or `skip` for each |
+| 3 | Your choice of data sources, and a folder of CSV exports | `api`, `csv` or `skip` for each, and the folder |
+| 4 | `npm run deploy` creates the Lakehouse and sets everything up | Deploy fills in the workspace and Lakehouse IDs itself |
 
 **Where the data comes from.** The lake gets data in two ways:
 
 * **APIs:** the app you register in step 2 pulls it automatically, every day. No files to handle.
-* **CSV exports:** a few sources (product feedback, Copilot Studio credits, Viva Copilot credits) have no API, so someone **exports them from an admin portal** and you upload them.
+* **CSV exports:** a few sources (product feedback, Copilot Studio credits, Viva Copilot credits) have no API, so someone **exports them from an admin portal**. You save them in one folder and deploy uploads them.
 
 **1. Get the code.** Install Git, **Node.js 20.12+** and **Python 3.9+** (check with `git --version`, `node --version`, `python --version`). Then clone this repo (its URL is under **Code > Clone** at the top of its GitHub page). Everything it needs is inside; there's nothing else to download.
 
@@ -60,37 +61,36 @@ cd UniversalLake
 copy config.template.json config.json
 ```
 
-`config.json` is git-ignored, so your IDs never get committed. Leave it as it is for now. Each setting has a `//` comment saying what it is and where it comes from; leave the comments in (your editor may underline them; that's fine). There's no `npm install`: the build uses only Node.js and Python. If `npm` is blocked on your PC (e.g. a Microsoft-managed device), see [If `npm run all` doesn't work](03-configure/README.md#if-npm-run-all-doesnt-work).
+`config.json` is git-ignored, so your IDs never get committed. Leave it as it is for now. Each setting has a `//` comment saying what it is and where it comes from; leave the comments in (your editor may underline them; that's fine). There's no `npm install`: the build uses only Node.js and Python. If `npm` is blocked on your PC (e.g. a Microsoft-managed device), see [If `npm` doesn't work](03-configure/README.md#if-npm-doesnt-work).
 
 **2. Decide which sources you want.** Look at the [data sources table](#data-sources). `copilotInteractions` and `orgData` are required; start with those and add others later if you like. Your choice decides the app's permissions in step 2, so make it now (you write it into `config.json` in step 3).
 
 **3. Start the CSV exports now (only for CSV sources you want).** They need admin roles you may not have, so ask early:
 
 * Find the role for each export in the [data sources table](#data-sources) and ask whoever has it.
-* Save **all the exported files in one folder on your PC**, outside this repo (for example `Documents\UniversalLake-exports`). **Don't rename them**; the notebooks find them by their original names.
-* That's all for now. You upload them in [step 4.6](04-import/README.md#46-upload-csv-exports-only-sources-set-to-csv), after the Lakehouse folders exist.
-* Can't get a file yet? You can still build the lake; that source's tables stay empty until you upload.
+* Save **all the exported files in one folder on your PC**, outside this repo (for example `Documents\UniversalLake-exports`). Subfolders are fine. In step 3 you put this folder in `config.json` as `exportsFolder`; deploy recognises each file by its columns and uploads it.
+* [Which Studio and Viva files](03-configure/README.md#studio-and-viva-which-files).
+* Can't get a file yet? You can still build the lake; that source's tables stay empty until you add it and deploy again.
 
 ## Steps
 
-Do them in order. Each folder's README has the exact clicks.
+Do them in order. Each folder's README is a short checklist; if something goes wrong, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 | Step | You do | Where |
 |---|---|---|
-| [1. Fabric](01-fabric/README.md) | Create the workspace and a **schema-enabled** Lakehouse, copy their IDs into `config.json` | Fabric portal |
+| [1. Fabric](01-fabric/README.md) | Pick a capacity, create the workspace, put its name in `config.json` | Fabric portal |
 | [2. Permissions](02-permissions/README.md) | Register the app, store its secret, give it access, **confirm the checklist** | Entra, Microsoft 365 admin, Azure portals |
-| [3. Configure](03-configure/README.md) | Set your data sources in `config.json`, check it's complete, run `npm run all` to generate the notebooks and model files | Your PC |
-| [4. Import](04-import/README.md) | Import the notebooks, run `Lake_Init` and `Lake_Validate_Credentials`, upload the model files | Fabric |
+| [3. Configure](03-configure/README.md) | Finish `config.json`: data sources and your exports folder | Your PC |
+| [4. Deploy](04-deploy/README.md) | `npm run deploy`: creates the Lakehouse, uploads notebooks, model files and CSVs, runs `Lake_Setup` to check everything | Your PC |
 | [5. Ingest](05-ingest/README.md) | Run `Lake_Orchestrator` once with `first_load`: all ingesters, the first backfill, processing and promote | Fabric |
-| [6. Process](06-process/README.md) | Check that the data was cleaned and sorted into report-ready tables | Fabric |
-| [7. Semantic models](07-semantic-model/README.md) | Create, connect and refresh the models | Fabric |
-| [8. Orchestrate](08-orchestrate/README.md) | Schedule the daily run, [re-run only what failed](08-orchestrate/RERUNS.md) | Fabric |
+| [6. Models](06-models/README.md) | Check the report-ready tables, run `Lake_Deploy_Models` to create and refresh the models | Fabric |
+| [7. Orchestrate](07-orchestrate/README.md) | Schedule the daily run, [re-run only what failed](07-orchestrate/RERUNS.md) | Fabric |
 
 **Backfill.** The first run loads 30 days of audit history by default (up to 180). Daily runs then pick up where the last one stopped. Every date range loaded is recorded in `ops.backfill_ledger`.
 
 ## Data sources
 
-**Copilot interactions** and **Org data** are required. Pick the others before step 2 (see [Before you start](#before-you-start)), because they decide the app's permissions. You can add more later. The tables each one creates are listed in [step 6](06-process/README.md).
+**Copilot interactions** and **Org data** are required. Pick the others before step 2 (see [Before you start](#before-you-start)), because they decide the app's permissions. You can add more later. The tables each one creates are listed in [step 6](06-models/README.md).
 
 | Source (`config.json` name) | What you get | Needs |
 |---|---|---|
@@ -100,7 +100,7 @@ Do them in order. Each folder's README has the exact clicks.
 | **Agent 365**<br/>`agent365` | Every agent in the tenant, with its publisher, status and owners | Graph `CopilotPackages.Read.All`, `Application.Read.All` (or a CSV export) |
 | **Product feedback**<br/>`productFeedback` | Copilot thumbs up and down, with comments | CSV from Microsoft 365 admin center > **Health > Product feedback > Export**.<br/>Role: Global Administrator or Reports Reader |
 | **Agent evaluator**<br/>`agentEvaluator` | Copilot Studio conversation transcripts, from Dataverse | No CSV; read directly from Dataverse. A Power Platform Administrator adds the app as an application user with **Bot Transcript Viewer** (Power Platform admin center) |
-| **Consumption**<br/>`consumption` | Copilot Studio and Copilot credits, Azure AI cost and tokens | **Studio credits:** CSVs from Power Platform admin center > **Licensing > Copilot Studio** (tenant, per-agent and per-user reports; [which files](04-import/README.md#studio-and-viva-which-files)). Role: Power Platform Administrator<br/>**Copilot credits:** CSVs from Viva Insights > **Copilot Consumption Dashboard > Export** (`PersonServiceCreditsMetrics` and `SpendingPolicyMetadata`). Role: Insights Analyst<br/>**Azure AI:** no CSV. A subscription Owner gives the app Reader, Cost Management Reader and Monitoring Reader on the subscription ([2.4](02-permissions/README.md#24-azure-ai-access-only-if-azureai-is-api)) |
+| **Consumption**<br/>`consumption` | Copilot Studio and Copilot credits, Azure AI cost and tokens | **Studio credits:** CSVs from Power Platform admin center > **Licensing > Copilot Studio** (tenant, per-agent and per-user reports; [which files](03-configure/README.md#studio-and-viva-which-files)). Role: Power Platform Administrator<br/>**Copilot credits:** CSVs from Viva Insights > **Copilot Consumption Dashboard > Export** (`PersonServiceCreditsMetrics` and `SpendingPolicyMetadata`). Role: Insights Analyst<br/>**Azure AI:** no CSV. A subscription Owner gives the app Reader, Cost Management Reader and Monitoring Reader on the subscription ([2.4](02-permissions/README.md#24-azure-ai-access-only-if-azureai-is-api)) |
 
 ## What ends up in the Lakehouse
 
@@ -120,9 +120,9 @@ They ask Microsoft's APIs for data a few requests at a time, stay within Purview
 
 ## Where the notebook code comes from
 
-Everything is in this repo. `notebooks/` holds the ingester and processor notebooks, `models/` the semantic model definitions (`.bim`), and `scripts/build/` the code that fills in your settings. `npm run all` turns them into the files you import. The `Lake_*` notebooks (sources in `notebook-src/`) set up the Lakehouse, check credentials, sort tables into layers, deploy the models and run everything in order.
+Everything is in this repo. `notebooks/` holds the ingester and processor notebooks, `models/` the semantic model definitions (`.bim`), and `scripts/build/` the code that fills in your settings. `npm run deploy` fills them in and sends them to Fabric (`npm run all` only builds them into `out/`). The `Lake_*` notebooks (sources in `notebook-src/`) set up the Lakehouse and check credentials (`Lake_Setup`), sort tables into layers, deploy the models and run everything in order.
 
-To take a newer version of this repo: `git pull`, run `npm run all`, re-import what it says changed ([step 4](04-import/README.md#re-building-later)), then run `Lake_Deploy_Models` and `Lake_Orchestrator`.
+To take a newer version of this repo: `git pull`, `npm run deploy` (it only sends what changed), then run `Lake_Deploy_Models` and `Lake_Orchestrator`.
 
 ## Keeping IDs and secrets out of the repo
 
@@ -131,11 +131,12 @@ Your IDs (and the secret, if you use the bypass) go only in `config.json` and `o
 ## Repository layout
 
 ```
-01-fabric/ … 08-orchestrate/   one folder per step: README plus that step's notebook or script
+01-fabric/ … 07-orchestrate/   one folder per step: README plus that step's notebook or script
+TROUBLESHOOTING.md             fixes for setup problems
 config.template.json           copy to config.json (git-ignored)
-scripts/                       generate notebooks and models (scripts/build/); scan for secrets
+scripts/                       deploy, generate notebooks and models (scripts/build/), scan for secrets
 notebooks/                     ingester and processor notebook templates
 models/                        semantic model definitions (.bim)
 notebook-src/                  readable sources of the Lake_* notebooks
-out/                           generated, git-ignored: what you import into Fabric
+out/                           generated, git-ignored: what deploy sends to Fabric
 ```

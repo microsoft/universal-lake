@@ -1,32 +1,135 @@
 # %% [markdown]
-# # Validate credentials
+# # Set up the Lakehouse and check the app
 #
-# Run this **before** any ingester. It proves, one check at a time, that the app registration can do what the
-# ingesters will ask of it, so a missing permission fails here with a clear message instead of an hour into a backfill.
+# `npm run deploy` runs this notebook for you, with the parameters filled in from `config.json`. You only open it
+# yourself to see why it failed, or to run it again after fixing a permission. It is safe to run again: nothing is
+# ever dropped.
 #
-# It needs no Lakehouse and writes nothing. Fill in the parameters cell from your `config.json`, then **Run all**.
+# **Part 1: the Lakehouse**
+#
+# 1. Checks the Lakehouse is **schema-enabled** (the ingesters write to `dbo`; the promote step needs other schemas).
+# 2. Creates the schemas **bronze**, **silver**, **gold** and **ops**, and the ops tables
+#    (`ops.config`, `ops.run_log`, `ops.backfill_ledger`, `ops.table_layers`).
+# 3. Creates the `Files/` folders for the sources you turned on.
+# 4. Saves your settings to `ops.config`, which every later notebook reads.
+#
+# **Part 2: the app's permissions**, one check at a time, so a missing permission fails here with a clear message
+# instead of an hour into a backfill.
 #
 # | Check | Proves | Fix if it fails |
 # |---|---|---|
-# | Key Vault | The notebook's user can read the client secret (skipped, with a warning, if you use `CLIENT_SECRET`) | Give yourself *Key Vault Secrets User* on the vault |
+# | Key Vault | You can read the client secret (skipped, with a warning, if you use `CLIENT_SECRET`) | Give yourself *Key Vault Secrets User* on the vault |
 # | Graph token | Tenant, app ID and secret are right | Check the IDs; make a new secret if it expired |
-# | Graph roles | Admin consent covers every enabled module | Grant the missing permission, then *Grant admin consent* |
+# | Graph roles | Admin consent covers every enabled source | Grant the missing permission, then *Grant admin consent* |
 # | Graph probes | Each API answers (audit query, reports, users, Copilot packages) | See the message: licence, consent delay, or report privacy |
-# | Report privacy | Usage reports show real names, so they join to org data | M365 admin centre > Settings > Org settings > Reports: turn off concealment |
+# | Report privacy | Usage reports show real names, so they join to org data | M365 admin center > Settings > Org settings > Reports: turn off concealment |
 # | Azure | The app can read the subscription(s) for Azure AI spend | Give the app Reader, Cost Management Reader and Monitoring Reader |
 # | Dataverse | The app can read conversation transcripts | Add the app as an application user with the Bot Transcript Viewer role |
+#
+# More fixes: `TROUBLESHOOTING.md` in the repo.
 
 # %% [parameters]
 TENANT_ID = ''
 CLIENT_ID = ''
-KEY_VAULT_URI = ''              # https://<vault>.vault.azure.net/  (recommended)
+KEY_VAULT_URI = ''                   # recommended; leave blank only if you use the CLIENT_SECRET bypass
 SECRET_NAME = 'universal-lake-client-secret'
-CLIENT_SECRET = ''              # NOT recommended: only when you have no Key Vault. Leave blank to use Key Vault.
+CLIENT_SECRET = ''                   # NOT recommended: only when you have no Key Vault
+SECRET_IN_NOTEBOOKS = False          # True when config.json has clientSecret and no Key Vault
+SQL_ENDPOINT = ''                    # Lakehouse > SQL analytics endpoint > Settings > SQL connection string
+SCALE = 'standard'                   # 'standard' or 'large' (more than ~20k Copilot users, or busy audit logs)
+BACKFILL_DAYS = 30                   # audit history the first load fetches (max 180)
 MODULES = 'copilotInteractions,orgData,m365Activity,agent365,productFeedback,consumption,agentEvaluator'
-AGENT365_SOURCE = 'api'         # 'api' needs Graph permissions; 'csv' does not
-AZURE_SUBSCRIPTION_IDS = ''     # comma-separated; empty skips the Azure checks
-DATAVERSE_URLS = ''             # comma-separated, e.g. https://contoso.crm.dynamics.com
-STRICT = True                   # raise at the end if any required check failed
+CSV_SOURCES = 'productFeedback,studioCredits,coworkCredits'  # sources set to 'csv'; Lake_Orchestrator checks their folders
+AGENT365_SOURCE = 'api'              # 'api' needs Graph permissions; 'csv' does not
+AZURE_SUBSCRIPTION_IDS = ''          # comma-separated; empty skips the Azure checks
+DATAVERSE_URLS = ''                  # comma-separated, e.g. https://contoso.crm.dynamics.com
+MODEL_ID_UNIVERSAL = ''              # filled in by Lake_Deploy_Models; set here only to reuse an existing model
+MODEL_ID_CONSUMPTION = ''
+MODEL_ID_AGENT_EVALUATOR = ''
+STRICT = True                        # fail the run if any required check failed
+
+# %%
+%run lake_ops
+
+# %%
+import os
+
+ctx = notebookutils.runtime.context
+workspace_id = ctx.get('currentWorkspaceId')
+workspace_name = ctx.get('currentWorkspaceName')
+lakehouse_id = ctx.get('defaultLakehouseId')
+lakehouse_name = ctx.get('defaultLakehouseName')
+if not lakehouse_id:
+    raise RuntimeError('No default Lakehouse. In the notebook explorer, add the Lakehouse and pin it as default.')
+print(f'Workspace: {workspace_name} ({workspace_id})')
+print(f'Lakehouse: {lakehouse_name} ({lakehouse_id})')
+
+def _schema_name(s):
+    return str(s).strip('`').split('.')[-1].strip('`').lower()
+
+schemas = {_schema_name(r[0]) for r in spark.sql('SHOW SCHEMAS').collect()}
+if 'dbo' not in schemas and not os.path.isdir('/lakehouse/default/Tables/dbo'):
+    print('Schemas Spark sees:', ', '.join(sorted(schemas)) or '(none)')
+    raise RuntimeError('This Lakehouse is not schema-enabled (it has no dbo schema). Check the Lakehouse explorer: a '
+                       'schema-enabled Lakehouse shows Tables > dbo. If it does, make sure THIS Lakehouse is pinned as '
+                       'the notebook default. If it does not, create a new Lakehouse with "Lakehouse schemas" ticked; '
+                       'schemas cannot be turned on for an existing one.')
+
+# %%
+ensure_ops()
+print('Schemas now:', ', '.join(sorted(r[0] for r in spark.sql('SHOW SCHEMAS').collect())))
+for name in OPS_TABLES:
+    print(f'  ops.{name}: {row_count(f"ops.{name}")} rows')
+
+# %% [markdown]
+# ## Files folders
+#
+# Only the folders for the sources you turned on are created (`analytics_hub_uploads` and `universal_lake/models` always).
+#
+# | Folder | Read by | Put here |
+# |---|---|---|
+# | `Files/analytics_hub_uploads` | Upload Router | Any CSV export; the router recognises it and moves it to the right folder |
+# | `Files/agent365` | Agent365 Lander | `agents.csv` from the Microsoft 365 admin centre (CSV mode, or API fallback) |
+# | `Files/product_feedback` | Product Feedback ingester | Feedback exports |
+# | `Files/landing/studio` | Consumption_Ingest_Studio | Copilot Studio credit exports |
+# | `Files/landing/viva` | Consumption_Ingest_Viva | Cowork / Viva credit exports |
+# | `Files/org_workday` | Workday lander | Workday org extract (only when org data comes from Workday) |
+# | `Files/universal_lake/models` | Lake_Promote_Medallion, Lake_Deploy_Models | Upload the whole `out/models` folder from `npm run models` here (`gold_tables.json`, `<key>/definition.json`) |
+
+# %%
+_mods = {m.strip() for m in MODULES.split(',') if m.strip()}
+_csv = {s.strip() for s in CSV_SOURCES.split(',') if s.strip()}
+FOLDERS = ['analytics_hub_uploads', 'universal_lake/models']
+if 'agent365' in _mods: FOLDERS.append('agent365')
+if 'productFeedback' in _mods: FOLDERS.append('product_feedback')
+if 'consumption' in _mods: FOLDERS += ['landing/studio', 'landing/viva']
+if 'workday' in _csv: FOLDERS.append('org_workday')
+print('Created only for the sources you turned on:')
+for f in FOLDERS:
+    os.makedirs(f'/lakehouse/default/Files/{f}', exist_ok=True)
+    print(f'  Files/{f}')
+
+# %%
+cfg_set({
+    'workspace_id': workspace_id, 'workspace_name': workspace_name,
+    'lakehouse_id': lakehouse_id, 'lakehouse_name': lakehouse_name, 'sql_endpoint': SQL_ENDPOINT,
+    'tenant_id': TENANT_ID, 'client_id': CLIENT_ID, 'key_vault_uri': KEY_VAULT_URI, 'secret_name': SECRET_NAME,
+    'secret_mode': 'notebook' if (SECRET_IN_NOTEBOOKS or (CLIENT_SECRET and not KEY_VAULT_URI)) else 'keyvault',
+    'scale': SCALE, 'backfill_days': BACKFILL_DAYS, 'modules': MODULES, 'csv_sources': CSV_SOURCES,
+    'model_id.universal': MODEL_ID_UNIVERSAL, 'model_id.consumption': MODEL_ID_CONSUMPTION,
+    'model_id.agentEvaluator': MODEL_ID_AGENT_EVALUATOR,
+})
+display(spark.table('ops.config').orderBy('key'))
+missing = [k for k in ('tenant_id', 'client_id', 'sql_endpoint') if not cfg(k)]
+if not SECRET_IN_NOTEBOOKS and not cfg('key_vault_uri'):
+    missing.append('key_vault_uri (or use the clientSecret bypass)')
+if SECRET_IN_NOTEBOOKS:
+    print('WARNING: no Key Vault. The client secret is inside the notebooks; move it to Key Vault when you can.')
+if missing:
+    print('Still to set (fix config.json and run npm run deploy again):', ', '.join(missing))
+
+# %% [markdown]
+# ## Part 2: the app's permissions
 
 # %%
 import base64
@@ -193,5 +296,5 @@ print(f"\n{len(results) - len(failed) - len(warned)} passed, {len(failed)} faile
 for r in failed:
     print(f"  FAIL {r['check']}: {r['detail']}")
 if failed and STRICT:
-    raise RuntimeError(f'{len(failed)} credential check(s) failed. Fix them before running the ingesters.')
+    raise RuntimeError(f'{len(failed)} credential check(s) failed. Fix them (see TROUBLESHOOTING.md), then run this notebook again.')
 notebookutils.notebook.exit(json.dumps({'passed': not failed, 'failed': [r['check'] for r in failed]}))

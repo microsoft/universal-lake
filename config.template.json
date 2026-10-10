@@ -1,6 +1,7 @@
 // Universal Lake settings.
 // Copy this file to config.json (git-ignored, so your IDs are never committed). Don't fill it in yet:
-// you fill it in as you go. Step 1: workspace and Lakehouse. Step 2: app and secret. Step 3: data sources.
+// you fill it in as you go. Step 1: workspace name. Step 2: app and secret. Step 3: data sources and exports folder.
+// npm run deploy (step 4) creates the Lakehouse and fills in the IDs marked "deploy fills this in".
 // Lines starting with // are guidance; the build ignores them, so you can leave them in.
 // Replace every value shown as <...>. The build (npm run all) warns about any you miss.
 // Field-by-field help: 03-configure/README.md, step 3.1.
@@ -19,13 +20,20 @@
   },
   "clientSecret": "",
 
-  // ---------- Required: from step 1.4 (copy from the Fabric URLs) ----------
+  // ---------- Required: from step 1 ----------
+  // Set the workspace name exactly as it shows in Fabric. Leave the <...> IDs: deploy fills them in.
   "workspace": { "id": "<fabric-workspace-guid>", "name": "<workspace name>" },
   "lakehouse": {
-    "id": "<lakehouse-guid>",                        // GUID after /lakehouses/ in the URL
-    "name": "UniversalLake_LH",                      // any name you like; must match the Lakehouse you created
-    "sqlEndpoint": "<xxxx.datawarehouse.fabric.microsoft.com>"   // host name only, no https://
+    "id": "<lakehouse-guid>",                        // deploy fills this in
+    "name": "UniversalLake_LH",                      // any name you like; deploy creates it if it doesn't exist
+    "sqlEndpoint": "<xxxx.datawarehouse.fabric.microsoft.com>"   // deploy fills this in
   },
+
+  // ---------- Your CSV exports (step 3) ----------
+  // A folder on this PC where you save every export for the sources set to "csv" below.
+  // npm run deploy recognises each file by its columns and uploads it; file names don't matter.
+  // Use forward slashes, e.g. "D:/lake-exports". Leave "" if no source is "csv".
+  "exportsFolder": "",
 
   // ---------- Defaults are fine ----------
   "scale": "standard",                               // "large" above ~20,000 Copilot users
@@ -33,10 +41,9 @@
 
   // ---------- What to load ----------
   // "api"  = pulled straight from Microsoft with the app from step 2.
-  // "csv"  = from an export file you download yourself. You don't upload anything now:
-  //          just download the export and save it on your PC. Lake_Init (step 4.3) creates a
-  //          folder for it in the Lakehouse, and you upload the file there in step 4.6.
-  //          If you can't get the file yet, use "skip" (the run still works; that source stays empty).
+  // "csv"  = from an export file you download yourself and save in exportsFolder (above).
+  //          npm run deploy uploads it. No file yet? The run still works; that source stays empty
+  //          until you add the file and deploy again.
   // "skip" = leave this source out: no notebook, no tables.
   "dataSources": {
     "copilotInteractions": "api",   // required. Copilot prompts and responses, from the audit log
@@ -45,8 +52,8 @@
     "agent365": "api",              // "api", "csv" or "skip". csv: M365 admin center > Agents > All agents > Export
     "workday": "skip",              // "csv" or "skip". Only if org data comes from a Workday export
     "productFeedback": "csv",       // "csv" or "skip". M365 admin center > Health > Product feedback > Export
-    "studioCredits": "csv",         // "csv" or "skip". Power Platform admin center > Licensing > Copilot Studio: tenant, per-agent and per-user reports (file list: step 4.6)
-    "coworkCredits": "csv",         // "csv" or "skip". Viva Insights > Copilot Consumption Dashboard > Export: PersonServiceCreditsMetrics + SpendingPolicyMetadata (step 4.6)
+    "studioCredits": "csv",         // "csv" or "skip". Power Platform admin center > Licensing > Copilot Studio: tenant, per-agent and per-user reports (file list: 03-configure)
+    "coworkCredits": "csv",         // "csv" or "skip". Viva Insights > Copilot Consumption Dashboard > Export: PersonServiceCreditsMetrics + SpendingPolicyMetadata (03-configure)
     "azureAi": "skip",              // "api" or "skip". "api" needs azure.subscriptionId below and the roles in step 2.4
     "agentEvaluator": "skip"        // "api" or "skip". "api" needs dataverseEnvironments below. There is no csv option
   },
