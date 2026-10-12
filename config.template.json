@@ -9,8 +9,9 @@
   // ---------- Required: from step 2 (app registration Overview page) ----------
   "tenantId": "<tenant-guid>",                      // Directory (tenant) ID
   "appId": "<app-registration-client-id>",          // Application (client) ID
-  // The tenant your Fabric workspace is in. Leave "": deploy asks whether it's the same as tenantId and fills
-  // this in. It differs only when the app and data are in another tenant (e.g. a demo tenant).
+  // The tenant your Fabric workspace is in: its ID or a domain you sign in with (e.g. contoso.com).
+  // Leave "": deploy asks whether Fabric is in the same tenant as the app and fills this in. It differs only
+  // when Fabric is in another tenant from the app (e.g. the data is in a demo tenant). Fabric portal > ? > About.
   "fabricTenantId": "",
 
   // ---------- Client secret: pick ONE of the two ways (step 2.2) ----------
