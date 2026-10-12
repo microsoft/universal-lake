@@ -57,6 +57,8 @@ Find them in the workspace (type *Semantic model*). Models for modules you didn'
 
 It never expires. You need to be **Admin** of the workspace, and the workspace must be on a paid Fabric capacity (F SKU); trial capacities can't have a workspace identity. If it can't, deploy says why and carries on.
 
+**If your tenant refuses the workspace identity.** Some tenants don't let it read the SQL endpoint, so refreshes fail with *The credentials provided for the SQL source are invalid*. Then `npm run deploy -- --rerun-failed` (or `--run first_load`) signs that connection in with your own account and keeps the sign-in fresh while it watches the run. Add `--sign-in-models` to do this every time. That sign-in lasts only about an hour without deploy, so for **scheduled runs** sign the connection in once in the portal: Settings (gear) > **Manage connections and gateways** > the *Universal Lake* connection to your Lakehouse > **Edit credentials** > **OAuth 2.0** > sign in > **Save**. That one stays signed in while your account has access.
+
 <details>
 <summary>Without a workspace identity: sign in once by hand</summary>
 

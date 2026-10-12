@@ -11,6 +11,8 @@
 //   npm run deploy -- --overwrite      replace same-named notebooks this PC didn't deploy (e.g. from a manual import)
 //   npm run deploy -- --capacity-retries <n>  when no Spark capacity is free, try again up to n times (default 6) ...
 //   npm run deploy -- --retry-wait <minutes>  ... waiting this long between tries (default 5)
+//   npm run deploy -- --sign-in-models  with --run or --rerun-failed: sign the models' connection in with your account
+//                                      (done anyway when the workspace identity was refused; see step 7)
 //   npm run deploy -- --config <file>  use another config file
 //
 // What it does:
@@ -22,6 +24,8 @@
 //   6. Runs Lake_Setup (Lakehouse setup + permission checks) and shows the result.
 //   7. Connects the semantic models to the Lakehouse with the workspace identity (created if missing), so model
 //      refreshes need no manual sign-in. Needs workspace Admin and a paid Fabric capacity; skipped with a warning otherwise.
+//      Some tenants refuse the workspace identity ("credentials provided for the SQL source are invalid"). Then, with
+//      --run or --rerun-failed, the connection is signed in with your account and kept fresh while deploy watches.
 //
 // Needs: Node 20.12+, Python, Contributor (or higher) on the workspace, and the Fabric REST APIs allowed for
 // users in your tenant (on by default). Sign-in uses the public Microsoft Azure CLI client; nothing is stored.
@@ -38,6 +42,7 @@ const FLAGS = new Set(process.argv.slice(2));
 const DRY_RUN = FLAGS.has('--dry-run');
 const RUN = arg('run', '');
 const RERUN_FAILED = FLAGS.has('--rerun-failed');
+const SIGN_IN_MODELS = FLAGS.has('--sign-in-models');
 const CAPACITY_RETRIES = Math.max(0, Number(arg('capacity-retries', '6')) || 0);
 const CAPACITY_WAIT_MIN = Math.max(1, Number(arg('retry-wait', '5')) || 5);
 // What Fabric says when no Spark capacity is free right now. It clears by itself, so these are retried.
@@ -141,6 +146,8 @@ let tenant = filled(cfg.fabricTenantId) ? cfg.fabricTenantId : cfg.tenantId;
 const tokenUrl = () => `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`;
 const SCOPE_FABRIC = 'https://api.fabric.microsoft.com/.default offline_access';
 const SCOPE_STORAGE = 'https://storage.azure.com/.default offline_access';
+const SCOPE_PBI = 'https://analysis.windows.net/powerbi/api/.default offline_access';
+const SCOPE_SQL = 'https://database.windows.net//.default offline_access';
 
 async function tokenRequest(params) {
   const res = await fetch(tokenUrl(), { method: 'POST', body: new URLSearchParams({ client_id: CLIENT_ID, ...params }) });
@@ -252,6 +259,12 @@ async function renewTokens() {
   storageToken = (await tokenRequest({ grant_type: 'refresh_token', refresh_token: refreshToken, scope: SCOPE_STORAGE })).access_token;
 }
 
+async function tokenFor(scope) {
+  const t = await tokenRequest({ grant_type: 'refresh_token', refresh_token: refreshToken, scope });
+  if (t.refresh_token) refreshToken = t.refresh_token;
+  return t.access_token;
+}
+
 // ---------- Fabric REST ----------
 
 async function call(method, url, { body, token = fabricToken, headers = {}, raw = false } = {}) {
@@ -356,6 +369,12 @@ function writeBack(ws, lh) {
 
 // ---------- Model connection (workspace identity) ----------
 
+async function deployedModels(ws) {
+  const summaryFile = join(OUT, 'models', 'SUMMARY.json');
+  const names = existsSync(summaryFile) ? JSON.parse(readFileSync(summaryFile, 'utf8')).models.filter((m) => !m.skipped).map((m) => m.name) : [];
+  return (await list(`/workspaces/${ws.id}/semanticModels`)).filter((m) => names.includes(m.displayName));
+}
+
 /**
  * Lets the semantic models read the Lakehouse with no sign-in to keep alive: the workspace identity (a Fabric-managed
  * identity of this workspace, in the Fabric tenant) reads the SQL endpoint through one shareable connection.
@@ -378,9 +397,11 @@ async function connectModels(ws, lh) {
   }
   const server = lh.sqlEndpoint, database = lh.displayName;
   const path = `${server};${database}`;
-  let conn = (await list('/connections')).find((c) => String(c.connectionDetails?.type).toUpperCase() === 'SQL'
-    && String(c.connectionDetails?.path).toLowerCase() === path.toLowerCase()
-    && c.credentialDetails?.credentialType === 'WorkspaceIdentity');
+  const same = (await list('/connections')).filter((c) => String(c.connectionDetails?.type).toUpperCase() === 'SQL'
+    && String(c.connectionDetails?.path).toLowerCase() === path.toLowerCase());
+  // A connection signed in with OAuth2 (by hand, or by signInModels when the identity is refused) is kept, not replaced.
+  let conn = same.find((c) => c.credentialDetails?.credentialType === 'WorkspaceIdentity')
+    ?? same.find((c) => c.credentialDetails?.credentialType === 'OAuth2');
   if (!conn) {
     conn = await (await call('POST', '/connections', { body: {
       connectivityType: 'ShareableCloud', displayName: `Universal Lake ${database} (workspace identity, ${ws.displayName})`.slice(0, 200),
@@ -392,15 +413,72 @@ async function connectModels(ws, lh) {
     } })).json();
     console.log(`  Created the connection "${conn.displayName}".`);
   } else console.log(`  Using the connection "${conn.displayName}".`);
-  const summaryFile = join(OUT, 'models', 'SUMMARY.json');
-  const names = existsSync(summaryFile) ? JSON.parse(readFileSync(summaryFile, 'utf8')).models.filter((m) => !m.skipped).map((m) => m.name) : [];
-  const models = (await list(`/workspaces/${ws.id}/semanticModels`)).filter((m) => names.includes(m.displayName));
+  const models = await deployedModels(ws);
   for (const m of models) {
     await call('POST', `/workspaces/${ws.id}/semanticModels/${m.id}/bindConnection`, { body: { connectionBinding: {
       id: conn.id, connectivityType: 'ShareableCloud', connectionDetails: { type: 'SQL', path } } } });
     console.log(`  ${m.displayName}: connected.`);
   }
   if (!models.length) console.log('  No models yet; Lake_Deploy_Models connects them when it creates them.');
+  return models;
+}
+
+const REFUSED = /credentials provided for the SQL source are invalid|Premium_ASWL_Error|without explicit connection credentials/i;
+const PBI = 'https://api.powerbi.com/v1.0/myorg';
+let signedInModels = false;
+
+/**
+ * Some tenants refuse the workspace identity for the SQL endpoint, so refreshes fail with "credentials ... invalid".
+ * Then this signs the models' connection in with your own account. Power BI can't renew that sign-in (about an hour),
+ * so the watch loop renews it while it watches; scheduled runs need the one-time sign-in in the portal.
+ * Runs when --sign-in-models is set, when the steps to retry failed this way, or when a model's last refresh did.
+ */
+async function signInModels(ws, models, failedText = '') {
+  if (!models?.length) return null;
+  const pbi = await tokenFor(SCOPE_PBI);
+  let refused = SIGN_IN_MODELS || REFUSED.test(failedText);
+  for (const m of models) {
+    if (refused) break;
+    try {
+      const last = (await (await call('GET', `${PBI}/groups/${ws.id}/datasets/${m.id}/refreshes?$top=1`, { token: pbi })).json()).value?.[0];
+      refused = last?.status === 'Failed' && REFUSED.test(last.serviceExceptionJson ?? '');
+    } catch { /* no refresh history yet */ }
+  }
+  if (!refused) return null;
+  const sources = new Map();
+  for (const m of models) {
+    for (const s of (await (await call('GET', `${PBI}/groups/${ws.id}/datasets/${m.id}/datasources`, { token: pbi })).json()).value ?? []) {
+      if (s.gatewayId && s.datasourceId) sources.set(`${s.gatewayId}/${s.datasourceId}`, s);
+    }
+  }
+  if (!sources.size) return null;
+  const patch = async () => {
+    const token = await tokenFor(SCOPE_PBI);
+    const credentials = JSON.stringify({ credentialData: [{ name: 'accessToken', value: await tokenFor(SCOPE_SQL) }] });
+    for (const s of sources.values()) {
+      await call('PATCH', `${PBI}/gateways/${s.gatewayId}/datasources/${s.datasourceId}`, { token, body: { credentialDetails: {
+        credentialType: 'OAuth2', credentials, encryptedConnection: 'NotEncrypted', encryptionAlgorithm: 'None',
+        privacyLevel: 'Organizational', useEndUserOAuth2Credentials: false } } });
+    }
+  };
+  console.log('\nThe models could not read the Lakehouse with the workspace identity (this tenant refuses it), so their');
+  console.log('connection is signed in with your account for this run. Deploy keeps that sign-in fresh while it watches.');
+  await patch();
+  signedInModels = true;
+  let at = Date.now();
+  return async () => {
+    if (Date.now() - at < 40 * 60_000) return;
+    try { await patch(); at = Date.now(); }
+    catch (e) { console.log(`  ${clock()} could not renew the model sign-in (${e.message.slice(0, 160)}); trying again in a minute`); }
+  };
+}
+
+function printSignInNote(ws) {
+  if (!signedInModels) return;
+  console.log('\nNOTE: the models used your sign-in from this terminal, which lasts about an hour without deploy watching.');
+  console.log('For scheduled runs, sign the connection in once in the portal (it then stays signed in): Settings (gear) >');
+  console.log('Manage connections and gateways > the "Universal Lake" connection to your Lakehouse > Edit credentials >');
+  console.log(`OAuth 2.0 > Sign in > Save. Or per model: https://app.powerbi.com/groups/${ws.id}/settings/datasets`);
 }
 
 // ---------- Notebooks, files, jobs ----------
@@ -560,7 +638,7 @@ async function readLatestStatus(ws, lhId) {
 }
 
 // Polls the orchestrator run until it ends, then says how it ended and what to do next.
-async function watchOrchestrator(ws, lhId, id, location, restart) {
+async function watchOrchestrator(ws, lhId, id, location, restart, keepSignedIn) {
   console.log('\nWatching the run; this window says when it ends. You can close it or press Ctrl+C at any time: the run keeps');
   console.log('going in Fabric, and npm run deploy -- --watch picks it up again.');
   const started = Date.now();
@@ -569,6 +647,7 @@ async function watchOrchestrator(ws, lhId, id, location, restart) {
   for (;;) {
     try {
       await renewTokens();
+      if (keepSignedIn) await keepSignedIn();
       job = await (await call('GET', location)).json();
     } catch (e) {
       console.log(`  ${clock()} could not check the run (${e.message.slice(0, 160)}); trying again in a minute`);
@@ -616,7 +695,11 @@ async function watchOrchestrator(ws, lhId, id, location, restart) {
     console.log('The full output is in Fabric: open the notebook, then the Run tab > Recent runs > this run:');
     console.log(`  ${notebookLink(ws, id)}`);
     console.log("More on retrying: step 5, 'Retry only what failed' (05-ingest/README.md).");
+    if (!signedInModels && REFUSED.test(JSON.stringify(st?.failed ?? []))) {
+      console.log('A model refresh was refused. npm run deploy -- --rerun-failed signs the models in with your account and retries.');
+    }
   }
+  printSignInNote(ws);
   return job;
 }
 
@@ -668,7 +751,8 @@ if (RERUN_FAILED) {
     console.log(`\nThe last run (${runId}) has no failed steps: nothing to retry.`);
     process.exit(0);
   }
-  rerun = { runId, mode: (st?.run_id === runId && st.run_mode) || runId.split('-')[0] };
+  rerun = { runId, mode: (st?.run_id === runId && st.run_mode) || runId.split('-')[0],
+    failedText: st?.run_id === runId ? JSON.stringify(st.failed ?? []) : '' };
   if (st?.run_id === runId) console.log(`\nWill retry ${st.failed.map((f) => f.step).join(', ')} from run ${runId} after deploying.`);
 }
 
@@ -691,11 +775,18 @@ if (job?.status !== 'Completed') {
   process.exit(1);
 }
 console.log('Lake_Setup passed: the Lakehouse is ready and the app has the permissions it needs.');
-try { await connectModels(ws, lh); }
+let models = null;
+try { models = await connectModels(ws, lh); }
 catch (e) {
   console.warn(`  Could not connect the models with the workspace identity: ${e.message}`);
   console.warn('  This needs workspace Admin and a paid Fabric capacity (F SKU). Until it works, model refreshes fail with');
   console.warn('  Premium_ASWL_Error. Fix the cause and run npm run deploy again, or see 06-models/README.md for the manual sign-in.');
+}
+let keepSignedIn = null;
+if (rerun || RUN === 'first_load' || SIGN_IN_MODELS) {
+  if (!models) models = await deployedModels(ws);
+  try { keepSignedIn = await signInModels(ws, models, rerun?.failedText); }
+  catch (e) { console.warn(`  Could not sign the models in with your account: ${e.message}`); }
 }
 
 if (rerun) {
@@ -710,7 +801,7 @@ if (rerun) {
   console.log(`\nStarted Lake_Orchestrator for run ${rerun.runId}, only the steps that did not succeed. Open the notebook:\n  ${notebookLink(ws, orch)}`);
   console.log('The notebook\'s saved settings (and its schedule) are not changed.');
   if (location) {
-    const run = await watchOrchestrator(ws, lh.id, orch, location, start);
+    const run = await watchOrchestrator(ws, lh.id, orch, location, start, keepSignedIn);
     process.exit(run.status === 'Completed' ? 0 : 1);
   }
 } else if (RUN === 'first_load') {
@@ -722,7 +813,7 @@ if (rerun) {
   console.log("This link opens the notebook, not the run. To see each step, open the Run tab at the top of the notebook (not the Run all menu), choose Recent runs and open the newest one:");
   console.log("each cell shows whether it has run and its output so far. The Monitor hub (left bar in Fabric) lists the run too.");
   if (location) {
-    const run = await watchOrchestrator(ws, lh.id, orch, location, start);
+    const run = await watchOrchestrator(ws, lh.id, orch, location, start, keepSignedIn);
     process.exit(run.status === 'Completed' ? 0 : 1);
   }
 } else {
