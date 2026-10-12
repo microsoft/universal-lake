@@ -35,7 +35,8 @@ const RULES = [
   ['Personal Windows profile path', /\b[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2}(?!<|%|\$|USERNAME\b|Public\b|you\b|me\b)[^\\/\s"'`]+/gi],
   ['Personal home path', /(?<![\w.])\/(home|Users)\/(?!<|\$|runner\b|you\b)[A-Za-z0-9._-]+/g],
   ['Email address', /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
-    (m) => !/@(users\.noreply\.github\.com|example\.(com|org)|contoso(-[a-z]+)?\.com|fabrikam\.com)$/i.test(m)],
+    (m) => !/@(users\.noreply\.github\.com|example\.(com|org)|contoso(-[a-z]+)?\.com|fabrikam\.com)$/i.test(m)
+      && !/^(opencode|secure)@microsoft\.com$/i.test(m)], // Microsoft's public open-source contacts
   ['Personal OneDrive / SharePoint link', /https?:\/\/[A-Za-z0-9-]+-my\.sharepoint(-df)?\.com\S*/gi],
   ['Tenant domain', /\b(?!contoso|fabrikam|yourtenant|<)[A-Za-z0-9-]+\.onmicrosoft\.com\b/gi],
 ];
