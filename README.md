@@ -4,7 +4,7 @@ Build **one Microsoft Fabric Lakehouse** that holds your Microsoft 365 Copilot d
 
 **Why bother?** Most Copilot and Microsoft 365 reports each collect their own copy of the data, so every new report means setting up the same sources, permissions and refreshes again. Build the lake once and that stops:
 
-* **Plug in our Power BI templates** without repeating the setup for each report. They all read the same semantic models.
+* **Plug in our Power BI templates** without repeating the setup for each report. They all read the same Lakehouse ([templates](templates/README.md)).
 * **Build your own analytics and observability foundation.** All the data sits in one place you own, ready for your own reports, Fabric apps, data agents or plain SQL.
 * **Know exactly what's going on.** Every step is a notebook you can open, read, change and rerun, so you can customise what's collected and how it's shaped.
 
@@ -18,14 +18,15 @@ The payoff: when it is done, you know exactly how this is put together. If a ste
 * semantic models with relationships and measures, ready to report on;
 * a log of every step and every date range loaded.
 
-This repo builds the lake and the models. Power BI templates and Fabric apps on top are separate deployments that connect to them.
+This repo builds the lake and the models, and ships two Power BI templates that report on it ([step 8](templates/README.md)). Fabric apps and agents on top are separate deployments that connect to them.
 
 ```mermaid
 flowchart LR
   S["Data sources<br/>audit log, M365 usage reports,<br/>Entra ID, Agent 365, Dataverse,<br/>credits and cost"] --> N["Ingester notebooks<br/>(step 5)"]
   N --> L[("One Lakehouse<br/>raw → cleaned → report-ready<br/>(step 6)")]
   L --> M["Semantic models<br/>(step 6)"]
-  M -.-> U["Power BI templates,<br/>Fabric apps, agents<br/>(later, separate)"]
+  M -.-> U["Fabric apps, agents<br/>(later, separate)"]
+  L --> T["Power BI templates<br/>ValueLens, AI-in-One<br/>(step 8)"]
 ```
 
 ## Disclaimer
@@ -93,7 +94,7 @@ Do them in order. Each folder's README is a short checklist; if something goes w
 | [5. Ingest](05-ingest/README.md) | Run `Lake_Orchestrator` once with `first_load`: all ingesters, the first backfill, processing and promote | Fabric |
 | [6. Models](06-models/README.md) | Check the report-ready tables and the semantic models the step 5 run created | Fabric |
 | [7. Orchestrate](07-orchestrate/README.md) | Schedule the daily run, [re-run only what failed](07-orchestrate/RERUNS.md) | Fabric |
-
+| [8. Reports](templates/README.md) | Open the ValueLens or AI-in-One template, point it at the Lakehouse, publish | Power BI Desktop |
 **Backfill.** The first run loads 30 days of audit history by default (up to 180). Daily runs then pick up where the last one stopped. Every date range loaded is recorded in `ops.backfill_ledger`.
 
 ## Data sources
@@ -142,6 +143,7 @@ scripts/                       deploy, generate notebooks and models (scripts/bu
 notebooks/                     ingester and processor notebook templates
 models/                        semantic model definitions (.bim)
 notebook-src/                  readable sources of the Lake_* notebooks
+templates/                     Power BI templates (.pbit) that report on the Lakehouse (step 8)
 out/                           generated, git-ignored: what deploy sends to Fabric
 ```
 

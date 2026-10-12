@@ -569,6 +569,27 @@ async function printModelLinks(ws) {
   } catch { /* links are a convenience */ }
 }
 
+const TEMPLATES = [
+  ['ValueLens - Fabric.pbit', 'Lakehouse Name'],
+  ['AI-in-One Dashboard - Fabric.pbit', 'Lakehouse Database'],
+];
+
+// The Power BI templates read the Lakehouse through its SQL endpoint, so they need its address and name.
+async function printTemplates(ws, lhId) {
+  try {
+    const lh = await (await call('GET', `/workspaces/${ws.id}/lakehouses/${lhId}`)).json();
+    const server = (lh.properties?.sqlEndpointProperties?.connectionString ?? cfg.lakehouse?.sqlEndpoint ?? '').replace(/^.*?:\/\//, '').replace(/[,;].*$/, '');
+    const found = TEMPLATES.filter(([file]) => existsSync(join(ROOT, 'templates', file)));
+    if (!server || !found.length) return;
+    console.log('\nWhat you can do now: open a Power BI report on the data (step 8, templates/README.md).');
+    found.forEach(([file], i) => console.log(`  ${i + 1}. ${join(ROOT, 'templates', file)}`));
+    console.log('  Double-click one to open it in Power BI Desktop. When it asks, enter:');
+    console.log(`    Fabric SQL Endpoint: ${server}`);
+    console.log(`    ${found.map(([, p]) => p).join(' / ')}: ${lh.displayName}`);
+    console.log('  Sign in with your organizational account when asked, then File > Publish to share it.');
+  } catch { /* the suggestion is a convenience */ }
+}
+
 async function waitForCapacity(name, budget, reason) {
   budget.used++;
   console.log(`  ${clock()} No Spark capacity is free right now for ${name} (${reason.replace(/\s+/g, ' ').slice(0, 200)}).`);
@@ -712,6 +733,7 @@ async function watchOrchestrator(ws, lhId, id, location, restart, keepSignedIn) 
   }
   printSignInNote(ws);
   await printModelLinks(ws);
+  if (job?.status === 'Completed') await printTemplates(ws, lhId);
   return job;
 }
 
