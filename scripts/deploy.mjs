@@ -557,6 +557,17 @@ async function uploadCsvs(ws, lh, report) {
 }
 
 const notebookLink = (ws, id) => `https://app.fabric.microsoft.com/groups/${ws.id}/synapsenotebooks/${id}`;
+const modelLink = (ws, id) => `https://app.fabric.microsoft.com/groups/${ws.id}/semanticmodels/${id}`;
+
+async function printModelLinks(ws) {
+  try {
+    let models = await deployedModels(ws);
+    if (!models.length) models = (await list(`/workspaces/${ws.id}/semanticModels`)).filter((m) => /^Universal Lake/i.test(m.displayName));
+    if (!models.length) return;
+    console.log('\nThe semantic models (open one, then Explore this data or Create a report):');
+    for (const m of models) console.log(`  ${m.displayName}: ${modelLink(ws, m.id)}`);
+  } catch { /* links are a convenience */ }
+}
 
 async function waitForCapacity(name, budget, reason) {
   budget.used++;
@@ -700,6 +711,7 @@ async function watchOrchestrator(ws, lhId, id, location, restart, keepSignedIn) 
     }
   }
   printSignInNote(ws);
+  await printModelLinks(ws);
   return job;
 }
 
