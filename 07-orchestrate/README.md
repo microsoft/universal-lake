@@ -42,6 +42,8 @@ These are the only ones you normally touch:
 | `START_FROM` | blank | Skip every step before this one |
 | `CONTINUE_ON_ERROR` | `True` | Keep going after a non-critical failure |
 | `AUTO_RESUME` | `8` | Extra automatic passes for an audit backfill that hits its time budget |
+| `CAPACITY_RETRIES` | `6` | A step that fails because no Spark capacity is free is tried again this many times |
+| `CAPACITY_RETRY_MINUTES` | `5` | Minutes to wait between those tries |
 
 </details>
 

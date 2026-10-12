@@ -33,6 +33,8 @@ SKIP_STEPS = ''                # comma-separated step names to leave out
 START_FROM = ''                # skip every step before this one
 CONTINUE_ON_ERROR = True       # non-critical failures are logged and the run continues
 AUTO_RESUME = 8                # extra automatic passes for an audit backfill that hits its time budget
+CAPACITY_RETRIES = 6           # a step that fails because no Spark capacity is free is tried again this many times ...
+CAPACITY_RETRY_MINUTES = 5     # ... waiting this many minutes between tries
 
 # %%
 %run lake_ops
@@ -310,6 +312,37 @@ def run_one(step_no, name, nb, timeout, args, led, run_mode=RUN_MODE):
         return status, err
 
 
+import re
+import time
+# What Fabric says when no Spark capacity is free right now. It clears by itself, so the step is tried again.
+CAPACITY_BUSY = re.compile(
+    r'HTTP 430|TooManyRequestsForCapacity|CapacityLimitExceeded|SparkJobQueue|Spark compute or API rate limit'
+    r'|capacity (is )?(full|busy|throttl)|no (available )?(spark )?capacity|not enough (spark )?(capacity|cores)'
+    r'|queue (is )?full', re.I)
+
+
+def run_retrying(step_no, name, nb, timeout, args, led):
+    """run_one, plus: resume a backfill that hit its time budget (AUTO_RESUME) and wait out a busy capacity
+    (CAPACITY_RETRIES every CAPACITY_RETRY_MINUTES). Every try is its own row in ops.run_log."""
+    status, err = run_one(step_no, name, nb, timeout, args, led)
+    passes = tries = 0
+    while True:
+        if status == 'paused' and passes < int(AUTO_RESUME):
+            passes += 1
+            print(f'    {name} paused (time budget); resuming automatically, pass {passes} of {AUTO_RESUME}. '
+                  'Finished windows are reused from staging.')
+        elif status == 'failed' and err and CAPACITY_BUSY.search(err) and tries < int(CAPACITY_RETRIES):
+            tries += 1
+            print(f'    No Spark capacity is free right now; trying {name} again in {CAPACITY_RETRY_MINUTES} min '
+                  f'(retry {tries} of {CAPACITY_RETRIES}).')
+            time.sleep(float(CAPACITY_RETRY_MINUTES) * 60)
+        else:
+            if status == 'failed' and err and CAPACITY_BUSY.search(err):
+                print(f'    Still no Spark capacity after {tries} retries. Rerun later with RERUN_FAILED = True, or raise '
+                      'CAPACITY_RETRIES / CAPACITY_RETRY_MINUTES.')
+            return status, err
+        status, err = run_one(step_no, name, nb, timeout, args, led)
+
 results, failures = {}, []
 stopped = None
 for step_no, (name, nb, module, critical, timeout, args, led, reason) in enumerate(plan, 1):
@@ -336,18 +369,12 @@ for step_no, (name, nb, module, critical, timeout, args, led, reason) in enumera
             stopped = name
         continue
 
-    status, err = run_one(step_no, name, nb, timeout, args, led)
-    passes = 0
-    while status == 'paused' and passes < int(AUTO_RESUME):
-        passes += 1
-        print(f'    {name} paused (time budget); resuming automatically, pass {passes} of {AUTO_RESUME}. '
-              'Finished windows are reused from staging.')
-        status, err = run_one(step_no, name, nb, timeout, args, led)
+    status, err = run_retrying(step_no, name, nb, timeout, args, led)
     results[name] = status
 
     if status != 'succeeded' and name in FALLBACKS:
         fname, fnb, ftimeout = FALLBACKS[name]
-        fstatus, _ = run_one(step_no, fname, fnb, ftimeout, dict, (led[0] + '_csv', None) if led else None)
+        fstatus, _ = run_retrying(step_no, fname, fnb, ftimeout, dict, (led[0] + '_csv', None) if led else None)
         results[fname] = fstatus
         if fstatus == 'succeeded':
             print(f'    {name} failed but its fallback {fname} succeeded')

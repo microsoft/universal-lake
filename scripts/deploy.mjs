@@ -9,6 +9,8 @@
 //   npm run deploy -- --device-code    sign in with a code instead of a browser window
 //   npm run deploy -- --reupload-csv   upload CSVs again even if this Lakehouse already has them
 //   npm run deploy -- --overwrite      replace same-named notebooks this PC didn't deploy (e.g. from a manual import)
+//   npm run deploy -- --capacity-retries <n>  when no Spark capacity is free, try again up to n times (default 6) ...
+//   npm run deploy -- --retry-wait <minutes>  ... waiting this long between tries (default 5)
 //   npm run deploy -- --config <file>  use another config file
 //
 // What it does:
@@ -36,6 +38,10 @@ const FLAGS = new Set(process.argv.slice(2));
 const DRY_RUN = FLAGS.has('--dry-run');
 const RUN = arg('run', '');
 const RERUN_FAILED = FLAGS.has('--rerun-failed');
+const CAPACITY_RETRIES = Math.max(0, Number(arg('capacity-retries', '6')) || 0);
+const CAPACITY_WAIT_MIN = Math.max(1, Number(arg('retry-wait', '5')) || 5);
+// What Fabric says when no Spark capacity is free right now. It clears by itself, so these are retried.
+const CAPACITY_BUSY = /HTTP 430|TooManyRequestsForCapacity|CapacityLimitExceeded|SparkJobQueue|Spark compute or API rate limit|capacity (is )?(full|busy|throttl)|no (available )?(spark )?capacity|not enough (spark )?(capacity|cores)|queue (is )?full/i;
 const CLIENT_ID = '04b07795-8ddb-461a-bbee-02f9e1bf7b46';
 const FABRIC = 'https://api.fabric.microsoft.com/v1';
 const ONELAKE = 'https://onelake.dfs.fabric.microsoft.com';
@@ -474,19 +480,46 @@ async function uploadCsvs(ws, lh, report) {
 
 const notebookLink = (ws, id) => `https://app.fabric.microsoft.com/groups/${ws.id}/synapsenotebooks/${id}`;
 
-async function runNotebook(ws, id, parameters, { wait }) {
+async function waitForCapacity(name, budget, reason) {
+  budget.used++;
+  console.log(`  ${clock()} No Spark capacity is free right now for ${name} (${reason.replace(/\s+/g, ' ').slice(0, 200)}).`);
+  console.log(`  Trying again in ${CAPACITY_WAIT_MIN} min (retry ${budget.used} of ${CAPACITY_RETRIES}). Ctrl+C stops waiting.`);
+  await sleep(CAPACITY_WAIT_MIN * 60_000);
+  await renewTokens();
+}
+
+async function startNotebook(ws, id, parameters, name, budget) {
   const body = parameters ? { executionData: { parameters } } : undefined;
-  const res = await call('POST', `/workspaces/${ws.id}/items/${id}/jobs/instances?jobType=RunNotebook`, { body });
-  const location = res.headers.get('location');
-  if (!wait || !location) return location;
-  const started = Date.now();
-  let last = '';
   for (;;) {
-    await sleep(15000);
-    const job = await (await call('GET', location)).json();
-    if (job.status !== last) { console.log(`  ${job.status} (${Math.round((Date.now() - started) / 1000)}s)`); last = job.status; }
-    if (['Completed', 'Failed', 'Cancelled', 'Deduped'].includes(job.status)) return job;
-    if (Date.now() - started > 45 * 60_000) return { status: 'StillRunning' };
+    try {
+      const res = await call('POST', `/workspaces/${ws.id}/items/${id}/jobs/instances?jobType=RunNotebook`, { body });
+      return res.headers.get('location');
+    } catch (e) {
+      if (!CAPACITY_BUSY.test(e.message) || budget.used >= CAPACITY_RETRIES) throw e;
+      await waitForCapacity(name, budget, e.message);
+    }
+  }
+}
+
+async function runNotebook(ws, id, parameters, { wait, name = 'the notebook', budget = { used: 0 } }) {
+  for (;;) {
+    const location = await startNotebook(ws, id, parameters, name, budget);
+    if (!wait || !location) return location;
+    const started = Date.now();
+    let last = '', job;
+    for (;;) {
+      await sleep(15000);
+      job = await (await call('GET', location)).json();
+      if (job.status !== last) { console.log(`  ${job.status} (${Math.round((Date.now() - started) / 1000)}s)`); last = job.status; }
+      if (['Completed', 'Failed', 'Cancelled', 'Deduped'].includes(job.status)) break;
+      if (Date.now() - started > 45 * 60_000) return { status: 'StillRunning' };
+    }
+    const reason = job.failureReason?.message ?? '';
+    if (job.status === 'Failed' && CAPACITY_BUSY.test(reason) && budget.used < CAPACITY_RETRIES) {
+      await waitForCapacity(name, budget, reason);
+      continue;
+    }
+    return job;
   }
 }
 
@@ -527,10 +560,11 @@ async function readLatestStatus(ws, lhId) {
 }
 
 // Polls the orchestrator run until it ends, then says how it ended and what to do next.
-async function watchOrchestrator(ws, lhId, id, location) {
+async function watchOrchestrator(ws, lhId, id, location, restart) {
   console.log('\nWatching the run; this window says when it ends. You can close it or press Ctrl+C at any time: the run keeps');
   console.log('going in Fabric, and npm run deploy -- --watch picks it up again.');
   const started = Date.now();
+  const budget = { used: 0 };
   let job, last = '', lastNote = 0;
   for (;;) {
     try {
@@ -544,6 +578,13 @@ async function watchOrchestrator(ws, lhId, id, location) {
     if (job.status !== last || Date.now() - lastNote >= 15 * 60_000) {
       console.log(`  ${clock()} ${job.status === 'InProgress' ? 'running' : job.status} (${duration(job, started)})`);
       last = job.status; lastNote = Date.now();
+    }
+    const reason = job.failureReason?.message ?? '';
+    if (job.status === 'Failed' && restart && CAPACITY_BUSY.test(reason) && budget.used < CAPACITY_RETRIES) {
+      await waitForCapacity('Lake_Orchestrator', budget, reason);
+      location = await restart(budget);
+      last = '';
+      continue;
     }
     if (DONE.includes(job.status)) break;
     await sleep(60_000);
@@ -565,6 +606,10 @@ async function watchOrchestrator(ws, lhId, id, location) {
       console.log(`(or open Lake_Orchestrator, set ${st.rerun} in the first cell and Run all).`);
     } else {
       if (job.failureReason?.message) console.log(`Fabric says: ${job.failureReason.message.slice(0, 600)}`);
+      if (CAPACITY_BUSY.test(job.failureReason?.message ?? '')) {
+        console.log('No Spark capacity was free. Run the same command again later, or wait longer with');
+        console.log(`--capacity-retries <n> (now ${CAPACITY_RETRIES}, every ${CAPACITY_WAIT_MIN} min; --retry-wait <minutes> changes the gap).`);
+      }
       if (st?.status === 'running') console.log('It stopped before or between steps (in one of its own cells), not in an ingest step.');
     }
     for (const w of st?.warnings ?? []) console.log(`WARNING: ${w}`);
@@ -638,7 +683,7 @@ if (FLAGS.has('--skip-setup')) process.exit(0);
 const setupId = ids.Lake_Setup;
 if (!setupId) fail('Lake_Setup was not found in out/notebooks. Check the build output above.');
 console.log('\nRunning Lake_Setup (sets up the Lakehouse and checks the app). The first run waits for Spark to start, a few minutes ...');
-const job = await runNotebook(ws, setupId, null, { wait: true });
+const job = await runNotebook(ws, setupId, null, { wait: true, name: 'Lake_Setup' });
 if (job?.status !== 'Completed') {
   console.error(`\nLake_Setup did not succeed: ${job?.status}${job?.failureReason?.message ? `: ${job.failureReason.message}` : ''}`);
   console.error(`Open it to see which check failed: ${notebookLink(ws, setupId)}`);
@@ -655,25 +700,29 @@ catch (e) {
 
 if (rerun) {
   const orch = ids.Lake_Orchestrator;
-  const location = await runNotebook(ws, orch, {
+  const params = {
     RUN_MODE: { value: rerun.mode, type: 'string' },
     RUN_ID: { value: rerun.runId, type: 'string' },
     RERUN_FAILED: { value: true, type: 'bool' },
-  }, { wait: false });
+  };
+  const start = (budget) => runNotebook(ws, orch, params, { wait: false, name: 'Lake_Orchestrator', budget });
+  const location = await start({ used: 0 });
   console.log(`\nStarted Lake_Orchestrator for run ${rerun.runId}, only the steps that did not succeed. Open the notebook:\n  ${notebookLink(ws, orch)}`);
   console.log('The notebook\'s saved settings (and its schedule) are not changed.');
   if (location) {
-    const run = await watchOrchestrator(ws, lh.id, orch, location);
+    const run = await watchOrchestrator(ws, lh.id, orch, location, start);
     process.exit(run.status === 'Completed' ? 0 : 1);
   }
 } else if (RUN === 'first_load') {
   const orch = ids.Lake_Orchestrator;
-  const location = await runNotebook(ws, orch, { RUN_MODE: { value: 'first_load', type: 'string' } }, { wait: false });
+  const start = (budget) => runNotebook(ws, orch, { RUN_MODE: { value: 'first_load', type: 'string' } },
+    { wait: false, name: 'Lake_Orchestrator', budget });
+  const location = await start({ used: 0 });
   console.log(`\nStarted Lake_Orchestrator with RUN_MODE = 'first_load'. It can take hours. Open the notebook:\n  ${notebookLink(ws, orch)}`);
   console.log("This link opens the notebook, not the run. To see each step, open the Run tab at the top of the notebook (not the Run all menu), choose Recent runs and open the newest one:");
   console.log("each cell shows whether it has run and its output so far. The Monitor hub (left bar in Fabric) lists the run too.");
   if (location) {
-    const run = await watchOrchestrator(ws, lh.id, orch, location);
+    const run = await watchOrchestrator(ws, lh.id, orch, location, start);
     process.exit(run.status === 'Completed' ? 0 : 1);
   }
 } else {
