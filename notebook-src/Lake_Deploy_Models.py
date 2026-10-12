@@ -162,17 +162,21 @@ def ensure_connection():
 
 
 def find_signin_connection():
-    """The sign-in (OAuth2) connection to this Lakehouse that someone created once, so every model can reuse it."""
+    """The connection to this Lakehouse that deploy (workspace identity) or someone (OAuth2 sign-in) created once,
+    so every model can reuse it. The workspace identity one is preferred: it never needs a sign-in again."""
     known = CONNECTION_ID or cfg('connection_id')
     target = f'{server};{database}'.lower()
+    found = {}
     for c in rest_list('/connections'):
         details = c.get('connectionDetails') or {}
+        kind = (c.get('credentialDetails') or {}).get('credentialType')
+        if str(details.get('type')).upper() == 'SQL' and str(details.get('path')).lower() == target and kind in ('WorkspaceIdentity', 'OAuth2'):
+            found.setdefault(kind, c)
         if known and c['id'] == known:
-            return c
-        if (not known and str(details.get('type')).upper() == 'SQL' and str(details.get('path')).lower() == target
-                and (c.get('credentialDetails') or {}).get('credentialType') == 'OAuth2'):
-            return c
-    return None
+            found.setdefault('known', c)
+    if CONNECTION_ID and 'known' in found:
+        return found['known']
+    return found.get('WorkspaceIdentity') or found.get('known') or found.get('OAuth2')
 
 
 def bind(model_id, connection_id):
@@ -268,12 +272,12 @@ for i, key in enumerate(keys, 1):
             if signin_conn:
                 bind(model_id, signin_conn['id'])
                 cfg_set({'connection_id': signin_conn['id']})
-                print(f'Bound to your sign-in connection "{signin_conn.get("displayName")}" ({signin_conn["id"]})')
+                print(f'Bound to the connection "{signin_conn.get("displayName")}" ({signin_conn["id"]})')
             else:
-                print('Reads the Lakehouse with your sign-in (CONNECTION_MODE = signin). Refreshes fail until you sign in '
-                      f'once: https://app.powerbi.com/groups/{ws}/settings/datasets/{model_id} > Gateway and cloud connections '
-                      '> Maps to > Create a connection > OAuth 2.0 > Edit credentials (a sign-in window opens) > Create > Apply. '
-                      'You do this once for the workspace: later runs find that connection and attach every model to it.')
+                print('No connection to the Lakehouse yet, so refreshes fail until there is one. Run npm run deploy: it connects '
+                      'the models with the workspace identity (needs workspace Admin). Or sign in once by hand: '
+                      f'https://app.powerbi.com/groups/{ws}/settings/datasets/{model_id} > Gateway and cloud connections '
+                      '> Maps to > Create a connection > OAuth 2.0 > Edit credentials > Create > Apply.')
 
         print('Relationships:')
         for r in bim['model'].get('relationships', []):
@@ -289,11 +293,10 @@ for i, key in enumerate(keys, 1):
             print(f'Refresh: {state}')
             if state != 'Completed' and CONNECTION_MODE in ('signin', 'skip') and 'credential' in json.dumps(detail).lower():
                 raise RuntimeError(
-                    f'Sign in once: open https://app.powerbi.com/groups/{ws}/settings/datasets/{model_id} , '
-                    'then Gateway and cloud connections (or Data source credentials) > Edit credentials > OAuth2 > '
-                    'Sign in. Then rerun this notebook with DEPLOY = False. You do this once: later runs attach every model '
-                    'to that connection. '
-                    'Or ask a Fabric admin to turn on "Service principals can call Fabric public APIs" so the app connects instead.')
+                    'The model has no working connection to the Lakehouse. Run npm run deploy: it connects the models with '
+                    'the workspace identity (needs workspace Admin and a paid Fabric capacity), then rerun this notebook with '
+                    f'DEPLOY = False. Or sign in once by hand: https://app.powerbi.com/groups/{ws}/settings/datasets/{model_id} , '
+                    'Gateway and cloud connections > Maps to > Create a connection > OAuth 2.0 > Edit credentials > Create > Apply.')
             if state != 'Completed':
                 raise RuntimeError(f'Refresh {state}: {json.dumps(detail.get("serviceExceptionJson") or detail)[:3000]}')
             try:

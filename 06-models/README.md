@@ -46,12 +46,21 @@ The same step 5 run also created the models, connected them and refreshed them:
 
 Find them in the workspace (type *Semantic model*). Models for modules you didn't pick aren't created.
 
-**Nobody has to sign in.** The models read the Lakehouse with the app's secret, so refreshes run unattended. This needs one admin setting, which `Lake_Setup` checks in step 4 (*App can call Fabric*): Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (or a group it is in). It is on by default in tenants created since mid-2025, so usually there's nothing to do.
+**Nobody has to sign in.** If the app is in the same tenant as Fabric, the models read the Lakehouse with the app's secret, so refreshes run unattended. This needs one admin setting, which `Lake_Setup` checks in step 4 (*App can call Fabric*): Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (or a group it is in). It is on by default in tenants created since mid-2025, so usually there's nothing to do.
+
+**Otherwise, deploy connects them with the workspace identity.** This covers an app in another tenant, or the setting being off. Each `npm run deploy` signs in to the Fabric tenant (`fabricTenantId`); the prompt says *Sign in to MICROSOFT FABRIC*, which is not the Graph sign-in. With that sign-in, deploy:
+
+1. Creates the workspace's identity if it has none. This is a Fabric-managed identity of the workspace, with no secret to look after.
+2. Gives that identity the Viewer role on the workspace.
+3. Creates one shareable connection to the Lakehouse SQL endpoint that uses the identity.
+4. Attaches the models to that connection. `Lake_Deploy_Models` attaches models it creates later to the same connection.
+
+It never expires. You need to be **Admin** of the workspace, and the workspace must be on a paid Fabric capacity (F SKU); trial capacities can't have a workspace identity. If it can't, deploy says why and carries on.
 
 <details>
-<summary>If the setting is off: sign in once</summary>
+<summary>Without a workspace identity: sign in once by hand</summary>
 
-The `models` step then falls back to your own sign-in by itself and prints a link per model; the refresh steps fail with *credentials* and print the same link. Either ask your Fabric admin to turn the setting on (the next run connects as the app), or sign in once. Open the printed link (any one model) > **Gateway and cloud connections** > **Maps to** > **Create a connection** > **OAuth 2.0** > **Edit credentials** (a sign-in window opens) > **Create** > **Apply**. You do this once for the workspace: every run (and every redeploy) finds that sign-in connection and attaches all the models to it, so new or recreated models need nothing. Refreshes keep working while your account has access to the workspace. If you leave, a colleague creates their own connection the same way, and deletes yours under Settings > **Manage connections and gateways**. Then rerun the orchestrator with `STEPS='refresh_universal'` (plus the other `refresh_*` steps you use).
+Open the printed link (any one model) > **Gateway and cloud connections** > **Maps to** > **Create a connection** > **OAuth 2.0** > **Edit credentials** (a sign-in window opens) > **Create** > **Apply**. You do this once for each Lakehouse: every run finds that connection and attaches all the models to it. Refreshes keep working while your account has access to the workspace. Then rerun the orchestrator with `STEPS='refresh_universal'` (plus the other `refresh_*` steps you use).
 
 </details>
 

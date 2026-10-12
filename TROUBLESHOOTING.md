@@ -82,7 +82,7 @@ To reclassify agents: add rows to `dbo.agent_type_overrides`, then run the orche
 
 | Message | Fix |
 |---|---|
-| `Premium_ASWL_Error` / *default data connection without explicit connection credentials* | The model isn't bound to a connection. Rerun the orchestrator with `STEPS='models,refresh_universal'` (or `Lake_Deploy_Models` with `DEPLOY = False`); it binds the model to a connection signed in as the app. If it reports the tenant setting, see [step 6](06-models/README.md#62-the-semantic-models). |
+| `Premium_ASWL_Error` / *default data connection without explicit connection credentials* | The model isn't bound to a connection. Run `npm run deploy` (or `npm run deploy -- --rerun-failed`): it connects the models with the workspace identity. If it prints *Could not connect the models with the workspace identity*, you need workspace Admin and a paid Fabric capacity; or sign in once by hand ([step 6](06-models/README.md#62-the-semantic-models)). |
 | *Could not connect as the app ... Falling back to your own sign-in*, or a refresh fails with *credentials* | Turn on *Service principals can call Fabric public APIs* for the app (Admin portal > Tenant settings > Developer settings), check you're Admin or Member of the workspace and that the secret is current. Or sign in once with the printed link: later runs attach every model to that connection ([step 6](06-models/README.md#62-the-semantic-models)). |
 | *Sign in once* | You're in `signin` mode. Sign in on the model's settings page as the message says, or switch to `spn` for unattended refreshes. |
 

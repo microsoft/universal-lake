@@ -1,6 +1,6 @@
 // Deploys everything to Fabric from config.json, so nothing is imported or uploaded by hand.
 //
-//   npm run deploy                     sign in, then do steps 1-6 below
+//   npm run deploy                     sign in to Fabric, then do steps 1-7 below
 //   npm run deploy -- --dry-run        check config.json and your exports folder only (no sign-in, nothing sent)
 //   npm run deploy -- --run first_load also start Lake_Orchestrator's first load when setup passes, and say when it ends
 //   npm run deploy -- --rerun-failed   deploy, then re-run only the steps of the last run that did not succeed, and say
@@ -18,6 +18,8 @@
 //   4. Creates or updates every notebook in out/notebooks (same name = updated in place).
 //   5. Uploads out/models to Files/universal_lake/models and the CSVs in exportsFolder to Files/analytics_hub_uploads.
 //   6. Runs Lake_Setup (Lakehouse setup + permission checks) and shows the result.
+//   7. Connects the semantic models to the Lakehouse with the workspace identity (created if missing), so model
+//      refreshes need no manual sign-in. Needs workspace Admin and a paid Fabric capacity; skipped with a warning otherwise.
 //
 // Needs: Node 20.12+, Python, Contributor (or higher) on the workspace, and the Fabric REST APIs allowed for
 // users in your tenant (on by default). Sign-in uses the public Microsoft Azure CLI client; nothing is stored.
@@ -147,6 +149,10 @@ function openBrowser(url) {
   try { spawn(cmd, args, { stdio: 'ignore', detached: true }).unref(); } catch { /* the URL is printed too */ }
 }
 
+// Says plainly which sign-in this is: the Fabric tenant, not the app's Microsoft Graph access (that uses the app's secret).
+const fabricSignInNote = () => `=== Sign in to MICROSOFT FABRIC (tenant ${tenant}) ===\n` +
+  'Use the account that has the Fabric workspace. This is NOT the Microsoft Graph sign-in: the app reads Graph with its own secret.\n' +
+  'Deploy uses this sign-in to upload the notebooks and to connect the semantic models to the Lakehouse.';
 async function signInBrowser() {
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
@@ -167,7 +173,7 @@ async function signInBrowser() {
       const url = `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize?` + new URLSearchParams({
         client_id: CLIENT_ID, response_type: 'code', redirect_uri: redirect, scope: SCOPE_FABRIC, state,
         code_challenge: challenge, code_challenge_method: 'S256', prompt: 'select_account' });
-      console.log('\nSign in to Fabric in the browser window that just opened. If none opened, open this link:\n' + url);
+      console.log(`\n${fabricSignInNote()}\nSign in in the browser window that just opened. If none opened, open this link:\n` + url);
       openBrowser(url);
     });
     setTimeout(() => { server.close(); reject(new Error('Timed out waiting for sign-in. Try --device-code.')); }, 5 * 60_000).unref();
@@ -180,7 +186,7 @@ async function signInDeviceCode() {
     method: 'POST', body: new URLSearchParams({ client_id: CLIENT_ID, scope: SCOPE_FABRIC }) });
   const dc = await res.json();
   if (!res.ok) fail(`Device-code sign-in failed: ${dc.error_description ?? res.statusText}`);
-  console.log(`\n${dc.message}`);
+  console.log(`\n${fabricSignInNote()}\n${dc.message}`);
   for (;;) {
     await sleep((dc.interval ?? 5) * 1000);
     try { return await tokenRequest({ grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: dc.device_code }); }
@@ -340,6 +346,55 @@ function writeBack(ws, lh) {
     writeFileSync(configFile, configText);
     console.log('Updated config.json with the workspace ID, Lakehouse ID and SQL endpoint.');
   }
+}
+
+// ---------- Model connection (workspace identity) ----------
+
+/**
+ * Lets the semantic models read the Lakehouse with no sign-in to keep alive: the workspace identity (a Fabric-managed
+ * identity of this workspace, in the Fabric tenant) reads the SQL endpoint through one shareable connection.
+ * Needs workspace Admin and a paid Fabric capacity. Lake_Deploy_Models attaches later models to the same connection.
+ */
+async function connectModels(ws, lh) {
+  console.log('\nConnecting the semantic models to the Lakehouse with the workspace identity ...');
+  let identity = (await (await call('GET', `/workspaces/${ws.id}`)).json()).workspaceIdentity;
+  if (!identity?.servicePrincipalId) {
+    console.log('  Creating the workspace identity (a minute or two) ...');
+    identity = await settle(await call('POST', `/workspaces/${ws.id}/provisionIdentity`));
+    if (!identity?.servicePrincipalId) identity = (await (await call('GET', `/workspaces/${ws.id}`)).json()).workspaceIdentity;
+    if (!identity?.servicePrincipalId) throw new Error('the workspace identity was not created');
+  }
+  const roles = await list(`/workspaces/${ws.id}/roleAssignments`);
+  if (!roles.some((r) => r.principal?.id === identity.servicePrincipalId)) {
+    await call('POST', `/workspaces/${ws.id}/roleAssignments`,
+      { body: { principal: { id: identity.servicePrincipalId, type: 'ServicePrincipal' }, role: 'Viewer' } });
+    console.log('  Gave the workspace identity the Viewer role, so it can read the Lakehouse.');
+  }
+  const server = lh.sqlEndpoint, database = lh.displayName;
+  const path = `${server};${database}`;
+  let conn = (await list('/connections')).find((c) => String(c.connectionDetails?.type).toUpperCase() === 'SQL'
+    && String(c.connectionDetails?.path).toLowerCase() === path.toLowerCase()
+    && c.credentialDetails?.credentialType === 'WorkspaceIdentity');
+  if (!conn) {
+    conn = await (await call('POST', '/connections', { body: {
+      connectivityType: 'ShareableCloud', displayName: `Universal Lake ${database} (workspace identity, ${ws.displayName})`.slice(0, 200),
+      privacyLevel: 'Organizational',
+      connectionDetails: { type: 'SQL', creationMethod: 'Sql', parameters: [
+        { dataType: 'Text', name: 'server', value: server }, { dataType: 'Text', name: 'database', value: database }] },
+      credentialDetails: { singleSignOnType: 'None', connectionEncryption: 'NotEncrypted', skipTestConnection: false,
+        credentials: { credentialType: 'WorkspaceIdentity' } },
+    } })).json();
+    console.log(`  Created the connection "${conn.displayName}".`);
+  } else console.log(`  Using the connection "${conn.displayName}".`);
+  const summaryFile = join(OUT, 'models', 'SUMMARY.json');
+  const names = existsSync(summaryFile) ? JSON.parse(readFileSync(summaryFile, 'utf8')).models.filter((m) => !m.skipped).map((m) => m.name) : [];
+  const models = (await list(`/workspaces/${ws.id}/semanticModels`)).filter((m) => names.includes(m.displayName));
+  for (const m of models) {
+    await call('POST', `/workspaces/${ws.id}/semanticModels/${m.id}/bindConnection`, { body: { connectionBinding: {
+      id: conn.id, connectivityType: 'ShareableCloud', connectionDetails: { type: 'SQL', path } } } });
+    console.log(`  ${m.displayName}: connected.`);
+  }
+  if (!models.length) console.log('  No models yet; Lake_Deploy_Models connects them when it creates them.');
 }
 
 // ---------- Notebooks, files, jobs ----------
@@ -591,6 +646,12 @@ if (job?.status !== 'Completed') {
   process.exit(1);
 }
 console.log('Lake_Setup passed: the Lakehouse is ready and the app has the permissions it needs.');
+try { await connectModels(ws, lh); }
+catch (e) {
+  console.warn(`  Could not connect the models with the workspace identity: ${e.message}`);
+  console.warn('  This needs workspace Admin and a paid Fabric capacity (F SKU). Until it works, model refreshes fail with');
+  console.warn('  Premium_ASWL_Error. Fix the cause and run npm run deploy again, or see 06-models/README.md for the manual sign-in.');
+}
 
 if (rerun) {
   const orch = ids.Lake_Orchestrator;
