@@ -163,11 +163,23 @@ previous = step_status(RUN_ID) if RERUN_FAILED else {}
 only, skip = set(_csv(STEPS)), set(_csv(SKIP_STEPS))
 start_idx = NAMES.index(START_FROM.strip()) if START_FROM.strip() else 0
 
+# npm run deploy leaves out the notebooks of sources set to 'skip' (or not configured, e.g. Azure AI without a
+# subscription), so a step whose notebook isn't in the workspace is skipped instead of failing.
+try:
+    DEPLOYED = {n.displayName for n in notebookutils.notebook.list(WORKSPACE_ID, 1000)}
+    if not any(s[1] in DEPLOYED for s in STEPS_ALL if s[3]):
+        DEPLOYED = None  # the list looks wrong (none of the core notebooks): don't skip on it
+except Exception as e:
+    print(f'Could not list the workspace notebooks ({e}); running every selected step.')
+    DEPLOYED = None
+
 plan = []
 for i, (name, nb, module, critical, timeout, args, led) in enumerate(STEPS_ALL):
     reason = ''
     if module not in MODULES:
         reason = f'module {module} not selected'
+    elif DEPLOYED is not None and nb not in DEPLOYED:
+        reason = f'{nb} is not in this workspace (its source is set to skip or not configured)'
     elif only and name not in only:
         reason = 'not in STEPS'
     elif name in skip:

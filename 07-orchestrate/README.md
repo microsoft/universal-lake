@@ -45,7 +45,7 @@ These are the only ones you normally touch:
 
 </details>
 
-`audit`, `licensed_users`, `processor` and `promote` are **critical**: if one fails, the rest of the run is skipped. After them come `models` (creates missing models and connects them as the app), `refresh_universal`, `refresh_consumption`, `refresh_agent_evaluator` and `data_check`. Steps for sources you didn't pick show as `SKIP`.
+`audit`, `licensed_users`, `processor` and `promote` are **critical**: if one fails, the rest of the run is skipped. After them come `models` (creates missing models and connects them as the app), `refresh_universal`, `refresh_consumption`, `refresh_agent_evaluator` and `data_check`. Steps for sources you didn't pick (set to `skip`, or Azure AI without a subscription) show as `SKIP`: their notebook isn't deployed.
 
 ## Check a run
 
