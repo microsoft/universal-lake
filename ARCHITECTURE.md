@@ -1,4 +1,34 @@
-# How the ingesters work
+# How it works
+
+You don't need any of this to set up the lake. It's here if you want to know what's inside.
+
+## What's in the Lakehouse
+
+You'll see these as folders (schemas) in the Lakehouse. Data moves from raw, to cleaned, to report-ready.
+
+| Folder | What's in it | Do you use it? |
+|---|---|---|
+| `gold` | The report-ready tables. The semantic models read only these. | **Yes.** Point reports, apps and SQL here. |
+| `silver` | Cleaned data and history the models don't read | Rarely |
+| `bronze` | Raw data as it arrived, and logs | Only to troubleshoot |
+| `ops` | Settings, the run log, and which dates have been loaded | To check runs |
+| `dbo` | The notebooks' working tables | No. Leave them alone; each daily load reads its own previous output. |
+
+## Where the code lives
+
+```
+01-fabric/ … 09-autorefresh/   one folder per step: README plus that step's notebook, script or templates
+config.template.json           copy to config.json (git-ignored)
+notebooks/                     ingester and processor notebooks
+notebook-src/                  readable sources of the Lake_* notebooks
+models/                        semantic model definitions (.bim)
+scripts/                       deploy, build notebooks and models (scripts/build/), scan for secrets
+out/                           generated, git-ignored: what deploy sends to Fabric
+```
+
+`npm run deploy` fills your settings into the notebooks and models and sends them to Fabric (`npm run all` only builds them into `out/`). The `Lake_*` notebooks set up the Lakehouse and check credentials (`Lake_Setup`), sort tables into layers, deploy the models and run everything in order (`Lake_Orchestrator`).
+
+## How the ingesters work
 
 Every ingester does two jobs, one after the other:
 

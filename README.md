@@ -12,14 +12,6 @@ Build **one Microsoft Fabric Lakehouse** that holds your Microsoft 365 Copilot d
 
 The payoff: when it is done, you know exactly how this is put together. If a step goes wrong, you don't have to take the whole thing apart. You can see which step, which cell, which source and which dates failed, and redo just that one.
 
-**You end up with**
-
-* one Lakehouse with all the data, refreshed daily;
-* semantic models with relationships and measures, ready to report on;
-* a log of every step and every date range loaded.
-
-This repo builds the lake and the models, and ships two Power BI templates that report on it ([step 8](08-report-templates/README.md)). Fabric apps and agents on top are separate deployments that connect to them.
-
 ```mermaid
 flowchart LR
   S["Data sources<br/>audit log, M365 usage reports,<br/>Entra ID, Agent 365, Dataverse,<br/>credits and cost"] --> N["Ingester notebooks<br/>(step 5)"]
@@ -101,7 +93,7 @@ Do them in order. Each folder's README is a short checklist; if something goes w
 
 ## Data sources
 
-**Copilot interactions** and **Org data** are required. Pick the others before step 2 (see [Before you start](#before-you-start)), because they decide the app's permissions. You can add more later. The tables each one creates are listed in [step 6](06-models/README.md).
+**Copilot interactions** and **Org data** are required; the rest are optional. The tables each one creates are listed in [step 6](06-models/README.md).
 
 | Source (`config.json` name) | What you get | Needs |
 |---|---|---|
@@ -113,40 +105,9 @@ Do them in order. Each folder's README is a short checklist; if something goes w
 | **Agent evaluator**<br/>`agentEvaluator` | Copilot Studio conversation transcripts, from Dataverse | No CSV; read directly from Dataverse. A Power Platform Administrator adds the app as an application user with **Bot Transcript Viewer** (Power Platform admin center) |
 | **Consumption**<br/>`consumption` | Copilot Studio and Copilot credits, Azure AI cost and tokens | **Studio credits:** CSVs from Power Platform admin center > **Licensing > Copilot Studio** (tenant, per-agent and per-user reports; [which files](03-configure/README.md#studio-and-viva-which-files)). Role: Power Platform Administrator<br/>**Copilot credits:** CSVs from Viva Insights > **Copilot Consumption Dashboard > Export** (`PersonServiceCreditsMetrics` and `SpendingPolicyMetadata`). Role: Insights Analyst<br/>**Azure AI:** no CSV. A subscription Owner gives the app Reader, Cost Management Reader and Monitoring Reader on the subscription ([2.4](02-permissions/README.md#24-azure-ai-access-only-if-azureai-is-api)) |
 
-## What ends up in the Lakehouse
+## How it works
 
-You don't need to know these to use the lake, but you'll see them as folders (schemas) in the Lakehouse. Data moves left to right: raw, then cleaned, then report-ready.
-
-| Folder | What's in it | Do you use it? |
-|---|---|---|
-| `gold` | The report-ready tables. The semantic models read only these. | **Yes.** Point reports, apps and SQL here. |
-| `silver` | Cleaned data and history the models don't read | Rarely |
-| `bronze` | Raw data as it arrived, and logs | Only to troubleshoot |
-| `ops` | Settings, the run log, and which dates have been loaded | To check runs |
-| `dbo` | The notebooks' working tables | No. Leave them alone; each daily load reads its own previous output. |
-
-## How the ingesters work
-
-They ask Microsoft's APIs for data a few requests at a time, stay within Purview's audit search limits, and save each finished piece, so a stopped run carries on where it left off. Spark then unpacks all the nested records at once across the cluster and updates the tables in place, so re-runs never create duplicates. Details: [ARCHITECTURE.md](ARCHITECTURE.md).
-
-## Where the notebook code comes from
-
-Everything is in this repo. `notebooks/` holds the ingester and processor notebooks, `models/` the semantic model definitions (`.bim`), and `scripts/build/` the code that fills in your settings. `npm run deploy` fills them in and sends them to Fabric (`npm run all` only builds them into `out/`). The `Lake_*` notebooks (sources in `notebook-src/`) set up the Lakehouse and check credentials (`Lake_Setup`), sort tables into layers, deploy the models and run everything in order.
-
-To take a newer version of this repo: `git pull`, `npm run deploy` (it only sends what changed), then run `Lake_Deploy_Models` (updates the models) and `Lake_Orchestrator`.
-
-## Repository layout
-
-```
-01-fabric/ … 09-autorefresh/   one folder per step: README plus that step's notebook, script or templates
-TROUBLESHOOTING.md             fixes for setup problems
-config.template.json           copy to config.json (git-ignored)
-scripts/                       deploy, generate notebooks and models (scripts/build/), scan for secrets
-notebooks/                     ingester and processor notebook templates
-models/                        semantic model definitions (.bim)
-notebook-src/                  readable sources of the Lake_* notebooks
-out/                           generated, git-ignored: what deploy sends to Fabric
-```
+Not needed to set it up. If you're curious what's in the Lakehouse, how the ingesters collect data, or where the code lives, see [How it works](ARCHITECTURE.md).
 
 ## For contributors
 
