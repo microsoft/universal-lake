@@ -8,6 +8,7 @@
 // which is git-ignored so the terms themselves are never committed. SCAN_BLOCKLIST (comma-separated) also works.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { inflateRawSync } from 'node:zlib';
 
 const args = process.argv.slice(2);
 const git = (...a) => execFileSync('git', a, { encoding: 'utf8' });
@@ -55,11 +56,57 @@ const files = (args.includes('--staged')
   : git('ls-files', '--cached', '--others', '--exclude-standard')
 ).split(/\r?\n/).filter((f) => f && existsSync(f));
 
-const SKIP = /\.(png|jpe?g|gif|ico|svg|pdf|pptx|docx|xlsx|zip|pbit|pbix)$/i;
+// Minimal zip reader (stored + deflate) so Power BI files can be scanned without dependencies.
+function unzip(buf) {
+  let eocd = buf.length - 22;
+  while (eocd >= 0 && buf.readUInt32LE(eocd) !== 0x06054b50) eocd--;
+  if (eocd < 0) throw new Error('not a zip file');
+  const parts = new Map();
+  let p = buf.readUInt32LE(eocd + 16);
+  for (let n = buf.readUInt16LE(eocd + 10); n > 0; n--) {
+    const method = buf.readUInt16LE(p + 10), size = buf.readUInt32LE(p + 20);
+    const nameLen = buf.readUInt16LE(p + 28), extraLen = buf.readUInt16LE(p + 30), commentLen = buf.readUInt16LE(p + 32);
+    const local = buf.readUInt32LE(p + 42), name = buf.toString('utf8', p + 46, p + 46 + nameLen);
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const raw = buf.subarray(start, start + size);
+    parts.set(name, method === 8 ? inflateRawSync(raw) : raw);
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return parts;
+}
+const decode = (b) => (b[0] === 0xff && b[1] === 0xfe) || (b.length > 1 && b[1] === 0 && b[0] !== 0)
+  ? b.toString('utf16le').replace(/^\uFEFF/, '') : b.toString('utf8').replace(/^\uFEFF/, '');
+
+// .pbit/.pbix: the publish target (dataset/report IDs), sensitivity labels (tenant ID) and the
+// non-GUID rules over the model and report parts. Model GUIDs are lineage tags; vendor visuals are third-party code.
+function scanPowerBi(f) {
+  let parts;
+  try { parts = unzip(readFileSync(f)); } catch (e) { findings.push(`${f}: can't open as a Power BI file (${e.message})`); return; }
+  const conn = parts.get('Connections');
+  if (conn && /"(DatasetId|ReportId|PbiModelDatabaseName)"\s*:\s*"[^"]+"/i.test(decode(conn)))
+    findings.push(`${f}: Connections names a published dataset/report (set it to {"Version":3,"RemoteArtifacts":[]})`);
+  const props = parts.get('docProps/custom.xml');
+  if (props && /MSIP_Label_|SiteId/i.test(decode(props)))
+    findings.push(`${f}: docProps/custom.xml has a sensitivity label with a tenant ID (empty the <Properties> element)`);
+  for (const [name, data] of parts) {
+    if (/^Report\/CustomVisuals\/|\.(png|jpe?g|gif|svg|ico|woff2?|ttf)$/i.test(name) || name === 'DataMashup') continue;
+    decode(data).split(/\r?\n/).forEach((line, i) => {
+      for (const [rule, re, keep = () => true] of RULES) {
+        if (rule.startsWith('GUID')) continue;
+        for (const m of line.matchAll(new RegExp(re.source, re.flags))) {
+          if (keep(m[0])) findings.push(`${f} [${name}:${i + 1}]: ${rule}: ${m[0].slice(0, 12)}…`);
+        }
+      }
+    });
+  }
+}
+
+const SKIP = /\.(png|jpe?g|gif|ico|svg|pdf|pptx|docx|xlsx|zip)$/i;
 const findings = [];
 for (const f of files) {
   if (SKIP.test(f)) continue;
   if (block.length && new RegExp(RULES.at(-1)[1].source, 'i').test(f)) findings.push(`${f}: blocked term in the file path`);
+  if (/\.(pbit|pbix)$/i.test(f)) { scanPowerBi(f); continue; }
   const text = readFileSync(f, 'utf8');
   if (f.endsWith('.ipynb')) {
     try {
