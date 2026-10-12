@@ -1,4 +1,4 @@
-# Step 8: Orchestrate
+# Step 7: Orchestrate
 
 You already ran `Lake_Orchestrator` once in step 5. From now on it's the daily job: each run loads what's new, processes and promotes it, refreshes the models and runs a data check. Each step is logged separately, so you can see exactly what failed and re-run just that.
 

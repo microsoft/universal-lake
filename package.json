@@ -13,6 +13,7 @@
     "sync": "node scripts/sync_notebooks.mjs",
     "models": "node scripts/build_models.mjs",
     "notebooks": "python scripts/build_ipynb.py",
-    "all": "node scripts/sync_notebooks.mjs && node scripts/build_models.mjs && python scripts/build_ipynb.py"
+    "all": "node scripts/sync_notebooks.mjs && node scripts/build_models.mjs && python scripts/build_ipynb.py",
+    "deploy": "node scripts/deploy.mjs"
   }
 }

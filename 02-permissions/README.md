@@ -1,6 +1,6 @@
 # Step 2: Permissions
 
-The notebooks sign in to Microsoft Graph (and, optionally, Azure and Dataverse) as an **app registration** with a client secret. In this step you register the app with the permissions for the data sources you chose in [Before you start](../README.md#before-you-start), store its secret, give it access to the Lakehouse, and confirm with the checklist at the end.
+The notebooks sign in to Microsoft Graph (and, optionally, Azure and Dataverse) as an **app registration** with a client secret. In this step you register the app with the permissions for the data sources you chose in [Before you start](../README.md#before-you-start), store its secret, give it access to the data, and confirm with the checklist at the end.
 
 Most failures later are a missing item from this page, so **don't skip the checklist**.
 
@@ -45,7 +45,7 @@ Use this only if you don't have a Key Vault yet, or can't get the Secrets Office
 * Leave `keyVault.uri` as it is and paste the secret into `"clientSecret"` in `config.json`.
 * The build then writes the secret **into the generated notebooks**. Anyone who can open those notebooks in the workspace can read it.
 
-If you take this route: keep workspace access to the people who need it, don't share or export the notebooks, never commit `config.json` or `out/` (both are git-ignored), and move to Option 1 as soon as you can (set `keyVault.uri`, clear `clientSecret`, rebuild and re-import).
+If you take this route: keep workspace access to the people who need it, don't share or export the notebooks, never commit `config.json` or `out/` (both are git-ignored), and move to Option 1 as soon as you can (set `keyVault.uri`, clear `clientSecret`, and run `npm run deploy`).
 
 ## 2.3 Give the app access
 
@@ -55,7 +55,9 @@ If you take this route: keep workspace access to the people who need it, don't s
 | Only for `azureAi` | Three read-only Azure roles for the app | See [2.4](#24-azure-ai-access-only-if-azureai-is-api) | Reads Azure AI resources, their cost and their token usage. |
 | Only for `agentEvaluator` | App is an application user with role **Bot Transcript Viewer** | [Power Platform admin center](https://admin.powerplatform.microsoft.com) > environment > **Settings > Users + permissions > Application users > New app user** | Reads Copilot Studio conversation transcripts from Dataverse. |
 
-You don't need to turn on audit logging: it's on by default in Microsoft 365 tenants. **One Fabric admin setting** lets the semantic models refresh as the app, with nobody signed in: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for the app (or a security group it is in). It is on by default in tenants created since mid-2025; if it's off, the notebooks fall back to your sign-in, given once for the workspace. `Lake_Validate_Credentials` adds the app to the workspace as Viewer and warns if the setting is off ([step 7](../07-semantic-model/README.md#check-them)).
+You don't need to turn on audit logging: it's on by default in Microsoft 365 tenants.
+
+**One Fabric admin setting**, so the semantic models refresh without anyone signing in: Fabric > **Settings > Admin portal > Tenant settings > Developer settings > *Service principals can call Fabric public APIs*** on for this app (or a security group it is in). It's on by default in tenants created since mid-2025. The models then read the Lakehouse as the app. `Lake_Setup` adds the app to the workspace and checks this setting in step 4. Without it, the notebooks fall back to your sign-in, given once for the workspace ([step 6](../06-models/README.md#62-the-semantic-models)).
 
 ## 2.4 Azure AI access (only if `azureAi` is `api`)
 
@@ -85,7 +87,7 @@ The `Ingest_Azure_AI` notebook signs in as the app and reads three things from o
 5. Repeat steps 2–4 for **Cost Management Reader** and for **Monitoring Reader**.
 6. Copilot pay-as-you-go may be billed to other subscriptions. If so, list them in `azure.paygSubscriptions` and give the app **Cost Management Reader** on each one.
 
-**Check it:** on the subscription, open **Access control (IAM) > Check access** and search for the app. All three roles should be listed. New assignments can take about 10 minutes to apply. `Lake_Validate_Credentials` checks again in step 4.
+**Check it:** on the subscription, open **Access control (IAM) > Check access** and search for the app. All three roles should be listed. New assignments can take about 10 minutes to apply. `Lake_Setup` checks again in step 4.
 
 **If someone else must do it**, send them this:
 
@@ -102,7 +104,7 @@ The `Ingest_Azure_AI` notebook signs in as the app and reads three things from o
 - [ ] Concealed names in reports are off.
 - [ ] Only if used: on the subscription, **Check access** shows the app with Reader, Cost Management Reader and Monitoring Reader (2.4); `agentEvaluator` has the Dataverse application user.
 
-`Lake_Validate_Credentials` re-checks most of this in step 4, but fixing it now is quicker. New consent can take a few minutes to reach tokens.
+`Lake_Setup` re-checks most of this when you deploy in step 4, but fixing it now is quicker. New consent can take a few minutes to reach tokens.
 
 ## Optional: do 2.1–2.4 with a script
 
@@ -120,8 +122,8 @@ Other parameters: `-AppName`, `-SecretName`, `-SecretYears`, `-AzureSubscription
 Create a new secret on the app (2.1 step 5), then:
 
 * **Key Vault**: update the secret in the vault. Notebooks pick it up on the next run.
-* **`config.json` bypass**: update `clientSecret`, run `npm run all`, delete and re-import the notebooks (step 4).
+* **`config.json` bypass**: update `clientSecret` and run `npm run deploy` (step 4).
 
-In both cases the next orchestrator run reconnects the models with the new secret (its `models` step).
+In both cases, the next orchestrator run gives the models' connection the new secret (its `models` step reconnects them every run).
 
 Next: [Step 3: Configure](../03-configure/README.md)
