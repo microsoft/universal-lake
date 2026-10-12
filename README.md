@@ -75,19 +75,18 @@ You fill in `config.json` in step 3; it stays on your PC. If `npm` is blocked on
 
 ## Steps
 
-Do them in order. Each folder's README is a short checklist; if something goes wrong, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+Steps 1–3 are set up in portals. After that, **the terminal does almost everything**: two commands replace steps 4–7. Every step can also be done by hand in Fabric if you prefer; each folder's README covers both ways. If something goes wrong, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
-| Step | You do | Where |
+| Step | From the terminal (fewest steps) | Or by hand |
 |---|---|---|
-| [1. Fabric](01-fabric/README.md) | Pick a capacity, create the workspace, put its name in `config.json` | Fabric portal |
-| [2. Permissions](02-permissions/README.md) | Register the app, store its secret, give it access, **confirm the checklist** | Entra, Microsoft 365 admin, Azure portals |
-| [3. Configure](03-configure/README.md) | Finish `config.json`: data sources and your exports folder | Your PC |
-| [4. Deploy](04-deploy/README.md) | `npm run deploy`: creates the Lakehouse, uploads notebooks, model files and CSVs, runs `Lake_Setup` to check everything | Your PC |
-| [5. Ingest](05-ingest/README.md) | Run `Lake_Orchestrator` once with `first_load`: all ingesters, the first backfill, processing and promote | Fabric |
-| [6. Models](06-models/README.md) | Check the report-ready tables and the semantic models the step 5 run created | Fabric |
-| [7. Orchestrate](07-orchestrate/README.md) | Schedule the daily run, [re-run only what failed](07-orchestrate/RERUNS.md) | Fabric |
-| [8. Reports](08-report-templates/README.md) | Open the ValueLens or AI-in-One template, point it at the Lakehouse, publish | Power BI Desktop |
-| [9. Auto-refresh](09-autorefresh/README.md) | `npm run deploy -- --schedule 06:00`, then the set-and-forget checklist; how to start a run yourself | Your PC, Fabric |
+| [1. Fabric](01-fabric/README.md) | – | Pick a capacity, create the workspace, put its name in `config.json` (Fabric portal) |
+| [2. Permissions](02-permissions/README.md) | `setup-app.ps1` (needs Azure CLI) | Register the app, store its secret, give it access, **confirm the checklist** (Entra, Microsoft 365 admin, Azure portals) |
+| [3. Configure](03-configure/README.md) | – | Finish `config.json`: data sources and your exports folder |
+| [4. Deploy](04-deploy/README.md)<br/>[5. Ingest](05-ingest/README.md)<br/>[6. Models](06-models/README.md) | **`npm run deploy -- --run first_load`**<br/>Creates the Lakehouse, uploads everything, checks setup, then loads the data and builds the models. Prints the model links when done. | `npm run deploy`, then in Fabric open `Lake_Orchestrator`, set `RUN_MODE = 'first_load'`, **Run all** |
+| [7. Orchestrate](07-orchestrate/README.md)<br/>[9. Auto-refresh](09-autorefresh/README.md) | **`npm run deploy -- --schedule 06:00`**<br/>Daily refresh. Re-run what failed: `npm run deploy -- --rerun-failed` | Schedule `Lake_Orchestrator` in Fabric; [re-run only what failed](07-orchestrate/RERUNS.md) |
+| [8. Reports](08-report-templates/README.md) | – | Open the ValueLens or AI-in-One template in Power BI Desktop, point it at the Lakehouse, publish |
+
+Then do the one-time [set-and-forget checklist](09-autorefresh/README.md) so daily runs need no attention.
 
 **Backfill.** The first run loads 30 days of audit history by default (up to 180). Daily runs then pick up where the last one stopped. Every date range loaded is recorded in `ops.backfill_ledger`.
 
