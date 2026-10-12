@@ -59,7 +59,8 @@
     "studioCredits": "csv",         // "csv" or "skip". Power Platform admin center > Licensing > Copilot Studio: tenant, per-agent and per-user reports (file list: 03-configure)
     "coworkCredits": "csv",         // "csv" or "skip". Viva Insights > Copilot Consumption Dashboard > Export: PersonServiceCreditsMetrics + SpendingPolicyMetadata (03-configure)
     "azureAi": "skip",              // "api" or "skip". "api" needs azure.subscriptionId below and the roles in step 2.4
-    "agentEvaluator": "skip"        // "api" or "skip". "api" needs dataverseEnvironments below. There is no csv option
+    "agentEvaluator": "skip",       // "api" or "skip". "api" needs dataverseEnvironments below. There is no csv option
+    "m365Usage": "skip"             // "api" or "skip". Audit-log Teams/Outlook/Office activity for the M365 Usage Analytics template (08-report-templates). High mail volume
   },
 
   // ---------- Only if azureAi is "api"; otherwise leave as is ----------

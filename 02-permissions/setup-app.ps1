@@ -38,6 +38,7 @@ $PERMS = @{
   productFeedback = @()
   consumption     = @()
   agentEvaluator  = @()
+  m365Usage       = @('AuditLogsQuery.Read.All', 'User.Read.All')
 }
 $Modules = @('copilotInteractions') + ($Modules | ForEach-Object { if ($_ -eq 'core') { 'copilotInteractions' } else { $_ } }) | Select-Object -Unique
 foreach ($m in $Modules) { if (-not $PERMS.ContainsKey($m)) { throw "Unknown module '$m'. Known: $($PERMS.Keys -join ', ')" } }

@@ -30,6 +30,8 @@ You don't need to pick these; they run automatically. The names show up in the p
 | 8 | `product_feedback` | Copilot feedback | Every uploaded export | productFeedback |
 | 9 | `transcripts` | Copilot Studio transcripts | First load: `backfillDays`; daily: 14 days | agentEvaluator |
 | 10–12 | `azure_ai`, `studio`, `viva` | Azure AI cost; Studio and Cowork credits | Azure: 90 days; others: every uploaded file | consumption |
+| 13 | `m365_usage` | Teams, Outlook, Word, Excel, PowerPoint audit events, including mail items accessed | Like `audit` | m365Usage |
+| 14 | `m365_usage_gold` | Builds the M365 Usage Analytics inputs (user stats, session cohort, Entra users) and writes them as CSVs to `Files/m365_usage_export` | Rebuilt from all loaded usage data | m365Usage |
 
 After these come `promote` ([step 6](../06-models/README.md#61-check-the-data)), `models` (creates and connects the semantic models) and the model refreshes. Steps for sources you didn't pick show `SKIP`.
 

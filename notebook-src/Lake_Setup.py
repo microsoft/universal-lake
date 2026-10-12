@@ -39,7 +39,7 @@ SECRET_IN_NOTEBOOKS = False          # True when config.json has clientSecret an
 SQL_ENDPOINT = ''                    # Lakehouse > SQL analytics endpoint > Settings > SQL connection string
 SCALE = 'standard'                   # 'standard' or 'large' (more than ~20k Copilot users, or busy audit logs)
 BACKFILL_DAYS = 30                   # audit history the first load fetches (max 180)
-MODULES = 'copilotInteractions,orgData,m365Activity,agent365,productFeedback,consumption,agentEvaluator'
+MODULES = 'copilotInteractions,orgData,m365Activity,agent365,productFeedback,consumption,agentEvaluator,m365Usage'
 CSV_SOURCES = 'productFeedback,studioCredits,coworkCredits'  # sources set to 'csv'; Lake_Orchestrator checks their folders
 AGENT365_SOURCE = 'api'              # 'api' needs Graph permissions; 'csv' does not
 AZURE_SUBSCRIPTION_IDS = ''          # comma-separated; empty skips the Azure checks
@@ -105,6 +105,7 @@ if 'agent365' in _mods: FOLDERS.append('agent365')
 if 'productFeedback' in _mods: FOLDERS.append('product_feedback')
 if 'consumption' in _mods: FOLDERS += ['landing/studio', 'landing/viva']
 if 'workday' in _csv: FOLDERS.append('org_workday')
+if 'm365Usage' in _mods: FOLDERS.append('m365_usage_export')
 print('Created only for the sources you turned on:')
 for f in FOLDERS:
     os.makedirs(f'/lakehouse/default/Files/{f}', exist_ok=True)
@@ -203,6 +204,7 @@ REQUIRED = {
     'copilotInteractions': ['AuditLogsQuery.Read.All', 'Reports.Read.All'],
     'orgData': ['User.Read.All'],
     'm365Activity': ['Reports.Read.All'],
+    'm365Usage': ['AuditLogsQuery.Read.All', 'User.Read.All'],
     'agent365': ['CopilotPackages.Read.All', 'Application.Read.All', 'User.Read.All'] if AGENT365_SOURCE == 'api' else [],
 }
 if graph:

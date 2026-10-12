@@ -11,7 +11,7 @@ export const AGENT365_DIR = 'Files/agent365';
 export const WORKDAY_DIR = 'Files/org_workday';
 
 /** @typedef {'api' | 'csv' | 'skip'} SourceMode */
-/** @typedef {'core' | 'orgData' | 'workday' | 'm365Activity' | 'agent365' | 'productFeedback' | 'studioCredits' | 'coworkCredits' | 'azureAi' | 'agentEvaluator'} DataSourceId */
+/** @typedef {'core' | 'orgData' | 'workday' | 'm365Activity' | 'agent365' | 'productFeedback' | 'studioCredits' | 'coworkCredits' | 'azureAi' | 'agentEvaluator' | 'm365Usage'} DataSourceId */
 /** @typedef {Record<DataSourceId, SourceMode>} DataSourceModes */
 
 /**
@@ -131,6 +131,13 @@ export const DATA_SOURCES = [
     modes: ['api', 'skip'],
     defaultMode: 'skip',
     page: 'Agent Evaluator',
+  },
+  {
+    id: 'm365Usage',
+    label: 'Microsoft 365 usage (audit)',
+    description: 'Teams, Outlook and Office activity from the audit log, including mail items accessed. Feeds the M365 Usage Analytics template. Mail audit volume is high.',
+    modes: ['api', 'skip'],
+    defaultMode: 'skip',
   },
 ];
 
@@ -275,6 +282,7 @@ export function normaliseDataSources(saved, modules, consumption = {}) {
         coworkCredits: modules.consumption ? 'csv' : 'skip',
         azureAi: modules.consumption && consumption.azureSubscriptionId ? 'api' : 'skip',
         agentEvaluator: modules.agentEvaluator ? 'api' : 'skip',
+        m365Usage: modules.m365Usage ? 'api' : 'skip',
       };
   const out = { ...defaultDataSources(), ...legacy };
   for (const s of DATA_SOURCES) {
@@ -299,6 +307,7 @@ export function modulesFromSources(ds) {
     productFeedback: on('productFeedback'),
     consumption: on('studioCredits') || on('coworkCredits') || on('azureAi'),
     agentEvaluator: on('agentEvaluator'),
+    m365Usage: on('m365Usage'),
   };
 }
 

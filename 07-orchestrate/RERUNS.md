@@ -38,6 +38,8 @@ Opening a notebook and running it is always allowed. It isn't logged to `ops.*`.
 | `licensed_users`, `org_data`, `product_feedback`, `azure_ai`, `agent365` | yes | Snapshot or overwrite |
 | `m365_activity` | yes | Merges the last 4 days again |
 | `transcripts` | yes | Merges on natural keys |
+| `m365_usage` | yes | Like `audit`: replaces whole days |
+| `m365_usage_gold` | yes | Rebuilds every output |
 | `studio`, `viva` | yes | Reload every file in the landing folder |
 | `upload_router` | yes | Files already moved are gone from the uploads folder. Re-upload a file to route it again. |
 | `processor` | yes | `overwrite` rebuilds everything; `merge` upserts on `Id` |

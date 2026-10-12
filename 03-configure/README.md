@@ -43,6 +43,7 @@ You **don't** fill in `workspace.id`, `lakehouse.id` or `lakehouse.sqlEndpoint`:
 | `productFeedback`, `studioCredits`, `coworkCredits` | Optional | `csv`, `skip` | Exports only |
 | `azureAi` | Optional | `api`, `skip` | Also fill in `azure.subscriptionId` (below) |
 | `agentEvaluator` | Optional | `api`, `skip` | Also fill in `dataverseEnvironments` (below) |
+| `m365Usage` | Optional | `api`, `skip` | Audit-log Teams, Outlook and Office usage for the M365 Usage Analytics template. Mail audit volume is high, so backfills take longer |
 
 No export file yet for a `csv` source? Leave it as `csv`: the lake still builds, that source's tables stay empty, and deploy tells you which file is missing. Or set it to `skip` for now.
 

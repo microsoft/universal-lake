@@ -1,6 +1,6 @@
 # 8. Reports: the Power BI templates
 
-Two ready-made reports read the Lakehouse once step 5 has loaded it. Use either, or both.
+Two ready-made reports read the Lakehouse once step 5 has loaded it. Use either, or both. A third, [M365 Usage Analytics](#m365-usage-analytics), works when the optional `m365Usage` source is on.
 
 | Template | What it shows | Asks for |
 |---|---|---|
@@ -18,6 +18,22 @@ You need Power BI Desktop and read access to the workspace.
    * Leave the other settings at their defaults.
 3. Select **Load**. When asked, sign in with **Microsoft account > Organizational account**, using an account that can read the workspace.
 4. Wait for the data to load, then **File > Save as** a `.pbix`.
+
+## M365 Usage Analytics
+
+The [M365 Usage Analytics](https://github.com/microsoft/M365UsageAnalytics) template shows Teams, Outlook, Word, Excel and PowerPoint use per person, with activity tiers and Copilot licensing priorities. Turn on `m365Usage` in `config.json` (step 3) and its permissions (step 2). The `m365_usage` and `m365_usage_gold` steps then write its five inputs to the Lakehouse folder `Files/m365_usage_export`:
+
+| Template parameter | File in `Files/m365_usage_export` |
+|---|---|
+| Rollup | `Rollup.csv` |
+| Session Stats | `SessionStats.csv` |
+| User Stats | `UserStats.csv` |
+| Session Cohort | `SessionCohort.csv` |
+| Entra Users Data | `EntraUsers.csv` |
+
+The same data is also in the tables `m365_usage_rollup`, `m365_usage_sessionstats`, `m365_usage_userstats`, `m365_usage_sessioncohort` and `m365_usage_entrausers`.
+
+To open it, download the five CSVs (OneLake file explorer, or the Lakehouse **Files** view > **Download**), open the template and point each parameter at its file.
 
 ## Share it
 

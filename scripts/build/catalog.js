@@ -5,7 +5,7 @@
  */
 import { routerWanted } from './uploads.js';
 
-/** @typedef {'core' | 'orgData' | 'm365Activity' | 'agent365' | 'productFeedback' | 'consumption' | 'agentEvaluator'} ModuleId */
+/** @typedef {'core' | 'orgData' | 'm365Activity' | 'agent365' | 'productFeedback' | 'consumption' | 'agentEvaluator' | 'm365Usage'} ModuleId */
 
 /**
  * @typedef {object} ModuleInfo
@@ -75,6 +75,14 @@ export const MODULES = {
     defaultOn: false,
     permissions: [],
   },
+  m365Usage: {
+    id: 'm365Usage',
+    label: 'Microsoft 365 usage (audit)',
+    description: 'From the Microsoft 365 audit log: Teams, Outlook, Word, Excel and PowerPoint activity, including mail items accessed, plus Copilot sessions. Produces the five inputs of the M365 Usage Analytics Power BI template.',
+    required: false,
+    defaultOn: false,
+    permissions: ['AuditLogsQuery.Read.All', 'User.Read.All'],
+  },
 };
 
 /** Modules that change the main semantic model. The others have their own model or none. */
@@ -84,9 +92,9 @@ export const MODEL_MODULES = /** @type {const} */ (['core', 'orgData', 'm365Acti
 export const ESSENTIAL_MODULES = /** @type {const} */ (['core', 'orgData']);
 
 /** Modules that can be switched on, in order. */
-export const OPTIONAL_MODULES = /** @type {const} */ (['m365Activity', 'agent365', 'productFeedback', 'consumption', 'agentEvaluator']);
+export const OPTIONAL_MODULES = /** @type {const} */ (['m365Activity', 'agent365', 'productFeedback', 'consumption', 'agentEvaluator', 'm365Usage']);
 
-/** @typedef {'auditIngester' | 'licensedUsers' | 'processor' | 'dataCheck' | 'orgData' | 'm365Activity' | 'agent365Registry' | 'agent365Lander' | 'productFeedback' | 'refreshModel' | 'azureAi' | 'studioConsumption' | 'vivaConsumption' | 'agentTranscripts' | 'uploadRouter' | 'workdayLander' | 'loadStatus'} NotebookKey */
+/** @typedef {'auditIngester' | 'licensedUsers' | 'processor' | 'dataCheck' | 'orgData' | 'm365Activity' | 'agent365Registry' | 'agent365Lander' | 'productFeedback' | 'refreshModel' | 'azureAi' | 'studioConsumption' | 'vivaConsumption' | 'agentTranscripts' | 'uploadRouter' | 'workdayLander' | 'loadStatus' | 'm365UsageIngester' | 'm365UsageGold'} NotebookKey */
 
 /**
  * A text change the build makes to its copy of a notebook. `find` must occur exactly once.
@@ -294,9 +302,25 @@ export const NOTEBOOKS = [
     parameters: ['LOOKBACK_DAYS'],
     dataverse: true,
   },
+  {
+    key: 'm365UsageIngester',
+    file: 'M365_Usage_Audit_Ingester.ipynb',
+    displayName: 'M365_Usage_Audit_Ingester',
+    module: 'm365Usage',
+    credentials: true,
+    parameters: ['MODE', 'BACKFILL_DAYS'],
+  },
+  {
+    key: 'm365UsageGold',
+    file: 'M365_Usage_Gold.ipynb',
+    displayName: 'M365_Usage_Gold',
+    module: 'm365Usage',
+    credentials: true,
+    parameters: [],
+  },
 ];
 
-/** @typedef {{ orgData: boolean, m365Activity: boolean, agent365: boolean, productFeedback: boolean, consumption: boolean, agentEvaluator: boolean }} ModuleChoice */
+/** @typedef {{ orgData: boolean, m365Activity: boolean, agent365: boolean, productFeedback: boolean, consumption: boolean, agentEvaluator: boolean, m365Usage: boolean }} ModuleChoice */
 
 /** @returns {ModuleChoice} */
 export function defaultModules() {
@@ -307,6 +331,7 @@ export function defaultModules() {
     productFeedback: MODULES.productFeedback.defaultOn,
     consumption: MODULES.consumption.defaultOn,
     agentEvaluator: MODULES.agentEvaluator.defaultOn,
+    m365Usage: MODULES.m365Usage.defaultOn,
   };
 }
 
@@ -332,6 +357,7 @@ export function enabledModules(modules) {
   if (modules.productFeedback) out.push('productFeedback');
   if (modules.consumption) out.push('consumption');
   if (modules.agentEvaluator) out.push('agentEvaluator');
+  if (modules.m365Usage) out.push('m365Usage');
   return out;
 }
 

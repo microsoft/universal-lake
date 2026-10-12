@@ -128,6 +128,9 @@ STEPS_ALL = [
     ('product_feedback', 'Copilot_ProductFeedback_Ingester',       'productFeedback', False, 30 * 60, dict, ('product_feedback', None)),
     ('transcripts',      'AgentEval_Transcript_Parser',            'agentEvaluator',  False, 2 * H,
         lambda: {'LOOKBACK_DAYS': TRANSCRIPT_DAYS}, ('agent_transcripts', TRANSCRIPT_DAYS)),
+    ('m365_usage',       'M365_Usage_Audit_Ingester',              'm365Usage',       False, (6 if LARGE else 2) * H, audit_args,
+        ('m365_usage_audit', BACKFILL_DAYS if IS_BACKFILL else None)),
+    ('m365_usage_gold',  'M365_Usage_Gold',                        'm365Usage',       False, 1 * H, dict, None),
     ('azure_ai',         'Consumption_Ingest_Azure_AI',            'consumption',     False, 1 * H, dict, ('azure_ai_consumption', 90)),
     ('studio',           'Consumption_Ingest_Studio',              'consumption',     False, 30 * 60, dict, ('studio_consumption', None)),
     ('viva',             'Consumption_Ingest_Viva',                'consumption',     False, 30 * 60, dict, ('viva_consumption', None)),
@@ -147,7 +150,8 @@ NAMES = [s[0] for s in STEPS_ALL]
 FALLBACKS = {'agent365': ('agent365_lander', 'Copilot_Agent365_Lander', 15 * 60)}
 
 # Steps that must have succeeded (in this run or, with RERUN_FAILED, earlier in RUN_ID) before a step may start.
-DEPENDS = {'processor': ['audit', 'licensed_users'], 'promote': ['processor'], 'models': ['promote']}
+DEPENDS = {'processor': ['audit', 'licensed_users'], 'promote': ['processor'], 'models': ['promote'],
+           'm365_usage_gold': ['m365_usage']}
 for r in ('refresh_universal', 'refresh_consumption', 'refresh_agent_evaluator'):
     DEPENDS[r] = ['promote']
 

@@ -19,6 +19,7 @@ All in the [Entra admin center](https://entra.microsoft.com):
    | `copilotInteractions` (**required**) | `AuditLogsQuery.Read.All`, `Reports.Read.All` |
    | `orgData` (**required**) | `User.Read.All` |
    | `m365Activity` (Teams, Outlook, Word, Excel, PowerPoint usage) | `Reports.Read.All` |
+   | `m365Usage` (audit-log usage for the M365 Usage Analytics template) | `AuditLogsQuery.Read.All`, `User.Read.All` |
    | `agent365` | `CopilotPackages.Read.All`, `Application.Read.All`, `User.Read.All` (or skip these and use a CSV export) |
    | `productFeedback`, credit exports, `azureAi`, `agentEvaluator` | none (CSV exports, or the access in 2.3 and 2.4) |
 
