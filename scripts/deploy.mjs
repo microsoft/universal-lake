@@ -3,9 +3,12 @@
 //   npm run deploy                     sign in to Fabric, then do steps 1-7 below
 //   npm run deploy -- --dry-run        check config.json and your exports folder only (no sign-in, nothing sent)
 //   npm run deploy -- --run first_load also start Lake_Orchestrator's first load when setup passes, and say when it ends
+//                                      (--run incremental or --run backfill start those modes instead)
 //   npm run deploy -- --rerun-failed   deploy, then re-run only the steps of the last run that did not succeed, and say
 //                                      when it ends (--run-id <run_id> picks an older run)
 //   npm run deploy -- --watch          only follow the latest Lake_Orchestrator run and say when it ends (deploys nothing)
+//   npm run deploy -- --schedule 06:00 only set Lake_Orchestrator to run every day at 06:00 (deploys nothing);
+//                                      --schedule off switches it off. Time zone: this PC's, or --time-zone "<Windows id>"
 //   npm run deploy -- --device-code    sign in with a code instead of a browser window
 //   npm run deploy -- --reupload-csv   upload CSVs again even if this Lakehouse already has them
 //   npm run deploy -- --overwrite      replace same-named notebooks this PC didn't deploy (e.g. from a manual import)
@@ -41,6 +44,19 @@ import { DATA_SOURCES, UPLOAD_DIR, UPLOAD_KINDS, normHeader } from './build/uplo
 const FLAGS = new Set(process.argv.slice(2));
 const DRY_RUN = FLAGS.has('--dry-run');
 const RUN = arg('run', '');
+const RUN_MODES = ['first_load', 'incremental', 'backfill'];
+const SCHEDULE = FLAGS.has('--schedule') ? String(arg('schedule', '')).toLowerCase() : null;
+if (RUN && !RUN_MODES.includes(RUN)) {
+  console.error(`\nERROR: --run needs one of ${RUN_MODES.join(', ')}, not "${RUN}".`);
+  process.exit(1);
+}
+if (SCHEDULE !== null && SCHEDULE !== 'off') {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(SCHEDULE);
+  if (!m || +m[1] > 23 || +m[2] > 59) {
+    console.error(`\nERROR: --schedule needs a time like 06:00 (24-hour clock) or off, not "${SCHEDULE}".`);
+    process.exit(1);
+  }
+}
 const RERUN_FAILED = FLAGS.has('--rerun-failed');
 const SIGN_IN_MODELS = FLAGS.has('--sign-in-models');
 const CAPACITY_RETRIES = Math.max(0, Number(arg('capacity-retries', '6')) || 0);
@@ -653,13 +669,65 @@ async function readRunStatus(ws, lhId, job) {
 
 function printNextSteps(mode) {
   if (mode === 'incremental') {
-    console.log('Nothing else to do. If the daily run is not scheduled yet: Lake_Orchestrator > Run > Schedule (step 7).');
+    console.log('Nothing else to do. If the daily run is not scheduled yet: npm run deploy -- --schedule 06:00 (step 9).');
     return;
   }
   console.log('\nNext:');
   console.log('  1. Check the data and the models: step 6 (06-models/README.md).');
-  console.log("  2. Set up the daily run: open Lake_Orchestrator, set RUN_MODE = 'incremental' (RUN_ID blank, RERUN_FAILED = False),");
-  console.log('     Save, then Run > Schedule > once a day. Step 7 (07-orchestrate/README.md).');
+  console.log('  2. Make it refresh by itself every day: npm run deploy -- --schedule 06:00 (any time you like).');
+  console.log('     Step 9 (09-autorefresh/README.md) has the one-time checklist.');
+}
+
+// ---------- Daily schedule ----------
+
+function localTimeZone() {
+  const tz = arg('time-zone', '');
+  if (tz) return tz;
+  if (process.platform === 'win32') {
+    const r = spawnSync('tzutil', ['/g'], { encoding: 'utf8' });
+    if (r.status === 0 && r.stdout.trim()) return r.stdout.trim();
+  }
+  return 'UTC';
+}
+
+// Creates, changes or switches off Lake_Orchestrator's daily schedule. The run uses the notebook's saved values,
+// which deploy resets to RUN_MODE = 'incremental'.
+async function setSchedule(ws, orch) {
+  const base = `/workspaces/${ws.id}/items/${orch.id}/jobs/RunNotebook/schedules`;
+  const existing = await list(base).catch(() => []);
+  if (SCHEDULE === 'off') {
+    const on = existing.filter((s) => s.enabled);
+    for (const s of on) await call('PATCH', `${base}/${s.id}`, { body: { enabled: false, configuration: s.configuration } });
+    console.log(on.length ? `Switched off ${on.length} schedule(s) on Lake_Orchestrator. It now runs only when you start it.`
+      : 'Lake_Orchestrator had no schedule switched on. Nothing changed.');
+    return;
+  }
+  const m = /^(\d{1,2}):(\d{2})$/.exec(SCHEDULE);
+  const time = `${m[1].padStart(2, '0')}:${m[2]}`;
+  const tz = localTimeZone();
+  const iso = (d) => d.toISOString().slice(0, 19) + 'Z';
+  const startAt = new Date(Date.now() + 5 * 60_000); // a start in the past would run it right away
+  const endAt = new Date(startAt); endAt.setUTCFullYear(endAt.getUTCFullYear() + 5);
+  const configuration = (end) => ({ type: 'Daily', times: [time], startDateTime: iso(startAt), endDateTime: iso(end), localTimeZoneId: tz });
+  const save = async (end) => {
+    const body = { enabled: true, configuration: configuration(end) };
+    const target = existing[0];
+    if (target) await call('PATCH', `${base}/${target.id}`, { body });
+    else await call('POST', base, { body });
+    for (const s of existing.slice(1).filter((x) => x.enabled)) {
+      await call('PATCH', `${base}/${s.id}`, { body: { enabled: false, configuration: s.configuration } });
+    }
+  };
+  let ends = endAt;
+  try { await save(endAt); }
+  catch {
+    ends = new Date(startAt); ends.setUTCFullYear(ends.getUTCFullYear() + 1);
+    await save(ends);
+  }
+  console.log(`\nLake_Orchestrator now runs every day at ${time} (${tz}), until ${ends.toLocaleDateString()}.`);
+  console.log('Each run uses the notebook\'s saved values (RUN_MODE = \'incremental\'), loads the new days and refreshes the models.');
+  console.log(`See or change it in Fabric: Lake_Orchestrator > Run > Schedule:\n  ${notebookLink(ws, orch.id)}`);
+  console.log('Before you rely on it, go through the checklist in step 9 (09-autorefresh/README.md).');
 }
 
 async function readLatestStatus(ws, lhId) {
@@ -766,6 +834,15 @@ if (FLAGS.has('--watch')) {
   process.exit(job.status === 'Completed' ? 0 : 1);
 }
 
+if (SCHEDULE !== null) {
+  await signIn();
+  const ws = await findWorkspace();
+  const orch = (await list(`/workspaces/${ws.id}/notebooks`)).find((n) => n.displayName === 'Lake_Orchestrator');
+  if (!orch) fail(`No Lake_Orchestrator notebook in workspace ${ws.displayName}. Run npm run deploy first.`);
+  await setSchedule(ws, orch);
+  process.exit(0);
+}
+
 printExports(report);
 await signIn();
 const ws = await findWorkspace();
@@ -818,7 +895,7 @@ catch (e) {
   console.warn('  Premium_ASWL_Error. Fix the cause and run npm run deploy again, or see 06-models/README.md for the manual sign-in.');
 }
 let keepSignedIn = null;
-if (rerun || RUN === 'first_load' || SIGN_IN_MODELS) {
+if (rerun || RUN || SIGN_IN_MODELS) {
   if (!models) models = await deployedModels(ws);
   try { keepSignedIn = await signInModels(ws, models, rerun?.failedText); }
   catch (e) { console.warn(`  Could not sign the models in with your account: ${e.message}`); }
@@ -839,12 +916,12 @@ if (rerun) {
     const run = await watchOrchestrator(ws, lh.id, orch, location, start, keepSignedIn);
     process.exit(run.status === 'Completed' ? 0 : 1);
   }
-} else if (RUN === 'first_load') {
+} else if (RUN) {
   const orch = ids.Lake_Orchestrator;
-  const start = (budget) => runNotebook(ws, orch, { RUN_MODE: { value: 'first_load', type: 'string' } },
+  const start = (budget) => runNotebook(ws, orch, { RUN_MODE: { value: RUN, type: 'string' } },
     { wait: false, name: 'Lake_Orchestrator', budget });
   const location = await start({ used: 0 });
-  console.log(`\nStarted Lake_Orchestrator with RUN_MODE = 'first_load'. It can take hours. Open the notebook:\n  ${notebookLink(ws, orch)}`);
+  console.log(`\nStarted Lake_Orchestrator with RUN_MODE = '${RUN}'.${RUN === 'incremental' ? '' : ' It can take hours.'} Open the notebook:\n  ${notebookLink(ws, orch)}`);
   console.log("This link opens the notebook, not the run. To see each step, open the Run tab at the top of the notebook (not the Run all menu), choose Recent runs and open the newest one:");
   console.log("each cell shows whether it has run and its output so far. The Monitor hub (left bar in Fabric) lists the run too.");
   if (location) {

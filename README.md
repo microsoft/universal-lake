@@ -95,6 +95,8 @@ Do them in order. Each folder's README is a short checklist; if something goes w
 | [6. Models](06-models/README.md) | Check the report-ready tables and the semantic models the step 5 run created | Fabric |
 | [7. Orchestrate](07-orchestrate/README.md) | Schedule the daily run, [re-run only what failed](07-orchestrate/RERUNS.md) | Fabric |
 | [8. Reports](08-report-templates/README.md) | Open the ValueLens or AI-in-One template, point it at the Lakehouse, publish | Power BI Desktop |
+| [9. Auto-refresh](09-autorefresh/README.md) | `npm run deploy -- --schedule 06:00`, then the set-and-forget checklist; how to start a run yourself | Your PC, Fabric |
+
 **Backfill.** The first run loads 30 days of audit history by default (up to 180). Daily runs then pick up where the last one stopped. Every date range loaded is recorded in `ops.backfill_ledger`.
 
 ## Data sources
@@ -136,7 +138,7 @@ To take a newer version of this repo: `git pull`, `npm run deploy` (it only send
 ## Repository layout
 
 ```
-01-fabric/ … 08-report-templates/   one folder per step: README plus that step's notebook, script or templates
+01-fabric/ … 09-autorefresh/   one folder per step: README plus that step's notebook, script or templates
 TROUBLESHOOTING.md             fixes for setup problems
 config.template.json           copy to config.json (git-ignored)
 scripts/                       deploy, generate notebooks and models (scripts/build/), scan for secrets

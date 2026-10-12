@@ -21,10 +21,12 @@ You need Power BI Desktop and read access to the workspace.
 
 ## Share it
 
-**File > Publish**, pick the workspace, then in Fabric open the published semantic model > **Settings > Data source credentials > Edit credentials > OAuth2** and sign in, so the report can refresh. Set **Scheduled refresh** to run after the daily `Lake_Orchestrator` run (step 7).
+**File > Publish**, pick the workspace, then in Fabric open the published semantic model > **Settings > Data source credentials > Edit credentials > OAuth2** and sign in, so the report can refresh. Set **Scheduled refresh** to run 1 to 2 hours after the daily `Lake_Orchestrator` run ([step 9](../09-autorefresh/README.md)).
 
 ## If it goes wrong
 
 * **A page is empty or a table is missing**: that source wasn't loaded. Turn it on in `config.json` and run its ingester (step 5), or leave it; ValueLens skips sources it can't find.
 * **Sign-in fails**: use the same tenant as the Fabric workspace, and check you can open the Lakehouse in Fabric.
 * More: [TROUBLESHOOTING.md](../TROUBLESHOOTING.md).
+
+Next: [step 9](../09-autorefresh/README.md), make the lake (and your reports) refresh by themselves.

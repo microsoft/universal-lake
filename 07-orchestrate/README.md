@@ -4,9 +4,9 @@ You already ran `Lake_Orchestrator` once in step 5. From now on it's the daily j
 
 ## Schedule the daily run
 
-1. Open `Lake_Orchestrator` and set the first cell back to the defaults: `RUN_MODE = 'incremental'`, `DRY_RUN = False`, `STEPS`, `RUN_ID` blank, `RERUN_FAILED = False`. **Save** (schedules use the saved values).
-2. **Run all** once by hand and check `models` and the refresh steps say `succeeded`.
-3. **Run > Schedule** > once a day.
+Run `npm run deploy -- --schedule 06:00`, or **Run > Schedule** > once a day in Fabric. Step 9 ([09-autorefresh](../09-autorefresh/README.md)) has the full set-and-forget checklist.
+
+Schedules use the notebook's **saved** values. `npm run deploy` saves the defaults (`RUN_MODE = 'incremental'`, the rest blank or `False`); if you changed the first cell by hand, set it back and **Save**.
 
 Don't start a manual run while the scheduled one is running: they share `Files/_audit_staging`.
 
