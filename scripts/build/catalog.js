@@ -94,7 +94,7 @@ export const ESSENTIAL_MODULES = /** @type {const} */ (['core', 'orgData']);
 /** Modules that can be switched on, in order. */
 export const OPTIONAL_MODULES = /** @type {const} */ (['m365Activity', 'agent365', 'productFeedback', 'consumption', 'agentEvaluator', 'm365Usage']);
 
-/** @typedef {'auditIngester' | 'licensedUsers' | 'processor' | 'dataCheck' | 'orgData' | 'm365Activity' | 'agent365Registry' | 'agent365Lander' | 'productFeedback' | 'refreshModel' | 'azureAi' | 'studioConsumption' | 'vivaConsumption' | 'agentTranscripts' | 'uploadRouter' | 'workdayLander' | 'loadStatus' | 'm365UsageIngester' | 'm365UsageGold'} NotebookKey */
+/** @typedef {'auditIngester' | 'licensedUsers' | 'processor' | 'dataCheck' | 'orgData' | 'm365Activity' | 'agent365Registry' | 'agent365Lander' | 'productFeedback' | 'refreshModel' | 'azureAi' | 'studioConsumption' | 'vivaConsumption' | 'agentTranscripts' | 'uploadRouter' | 'workdayLander' | 'loadStatus' | 'm365UsageIngester'} NotebookKey */
 
 /**
  * A text change the build makes to its copy of a notebook. `find` must occur exactly once.
@@ -309,14 +309,6 @@ export const NOTEBOOKS = [
     module: 'm365Usage',
     credentials: true,
     parameters: ['MODE', 'BACKFILL_DAYS'],
-  },
-  {
-    key: 'm365UsageGold',
-    file: 'M365_Usage_Gold.ipynb',
-    displayName: 'M365_Usage_Gold',
-    module: 'm365Usage',
-    credentials: true,
-    parameters: [],
   },
 ];
 

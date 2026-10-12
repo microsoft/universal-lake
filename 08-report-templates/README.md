@@ -21,19 +21,13 @@ You need Power BI Desktop and read access to the workspace.
 
 ## M365 Usage Analytics
 
-The [M365 Usage Analytics](https://github.com/microsoft/M365UsageAnalytics) template shows Teams, Outlook, Word, Excel and PowerPoint use per person, with activity tiers and Copilot licensing priorities. Turn on `m365Usage` in `config.json` (step 3) and its permissions (step 2). The `m365_usage` and `m365_usage_gold` steps then write its five inputs to the Lakehouse folder `Files/m365_usage_export`:
+The [M365 Usage Analytics](https://github.com/microsoft/M365UsageAnalytics) template shows Teams, Outlook, Word, Excel and PowerPoint use per person, with activity tiers and Copilot licensing priorities. Turn on `m365Usage` in `config.json` (step 3) and its permissions (step 2). The `m365_usage` step writes two daily tables: `m365_usage_rollup` (one row per user, day, operation, app and file type) and `m365_usage_sessionstats` (Copilot sessions and prompts per user, day and app).
 
-| Template parameter | File in `Files/m365_usage_export` |
-|---|---|
-| Rollup | `Rollup.csv` |
-| Session Stats | `SessionStats.csv` |
-| User Stats | `UserStats.csv` |
-| Session Cohort | `SessionCohort.csv` |
-| Entra Users Data | `EntraUsers.csv` |
+`M365 Usage Analytics - Fabric.pbit` asks for the same **Fabric SQL Endpoint** and **Lakehouse Name** as ValueLens. It reads the two tables, and builds its per-user stats (tiers, percentiles, ranks), session cohorts and Entra user list with SQL queries that run on the SQL endpoint at each refresh. The queries are in [`m365-usage-sql`](m365-usage-sql); the user list comes from `copilot_org_data` and `copilot_licensed_users`, so turn on `orgData` too.
 
-The same data is also in the tables `m365_usage_rollup`, `m365_usage_sessionstats`, `m365_usage_userstats`, `m365_usage_sessioncohort` and `m365_usage_entrausers`.
+On the first refresh Power BI asks you to approve each native database query. Select **Run** for all three.
 
-To open it, download the five CSVs (OneLake file explorer, or the Lakehouse **Files** view > **Download**), open the template and point each parameter at its file.
+To change a query, edit `scripts/gen_m365_usage_sql.py`, then run `python scripts/gen_m365_usage_sql.py` and `python scripts/patch_m365_pbit.py`. `scripts/test_m365_usage_sql.py` checks the queries against the original M365 Usage Analytics processor.
 
 ## Share it
 

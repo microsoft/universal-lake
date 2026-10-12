@@ -19,6 +19,7 @@ const ALLOWED_GUIDS = new Set([
   '00000003-0000-0000-c000-000000000000', // Microsoft Graph (resource app ID)
   '04b07795-8ddb-461a-bbee-02f9e1bf7b46', // Microsoft Azure CLI public client (npm run deploy signs in with it)
   '9a18296a-025f-4e37-9ffa-30bf8d1ce775', // Microsoft 365 Copilot SKU ID (public)
+  '639dec6b-bb19-468b-871c-c5c441c4b0cb', // Microsoft 365 Copilot service plan ID (public)
   '11111111-1111-1111-1111-111111111111', // placeholder
 ]);
 // Model-internal IDs in .bim files (lineage tags, relationship names, PBI_Id) carry no tenant data.

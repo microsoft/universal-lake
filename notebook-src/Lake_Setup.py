@@ -105,7 +105,6 @@ if 'agent365' in _mods: FOLDERS.append('agent365')
 if 'productFeedback' in _mods: FOLDERS.append('product_feedback')
 if 'consumption' in _mods: FOLDERS += ['landing/studio', 'landing/viva']
 if 'workday' in _csv: FOLDERS.append('org_workday')
-if 'm365Usage' in _mods: FOLDERS.append('m365_usage_export')
 print('Created only for the sources you turned on:')
 for f in FOLDERS:
     os.makedirs(f'/lakehouse/default/Files/{f}', exist_ok=True)
