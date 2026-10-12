@@ -16,7 +16,7 @@
 # |---|---|---|
 # | Find | Looks the model up by the ID in `ops.config`, then by display name | n/a |
 # | Create / update | Creates the model, or replaces its definition (`updateDefinition`). Updating clears its data until the refresh | Fix the reported error and run again. Nothing else has changed yet |
-# | Connect | `CONNECTION_MODE`: `auto` (default) uses the app when its secret is available (Key Vault or `CLIENT_SECRET`), so refreshes run unattended, and falls back to `signin` if that fails; `spn` forces the app; `signin` uses your own sign-in, given once on the model's settings page; `existing` uses `CONNECTION_ID` | `spn`: the message names the tenant setting or role to fix. `signin`: it tells you where to sign in, then rerun with `DEPLOY = False` |
+# | Connect | `CONNECTION_MODE`: `auto` (default) uses the workspace identity connection when `npm run deploy` made one; otherwise the app when its secret is available (Key Vault or `CLIENT_SECRET`) and it is in the same tenant as Fabric, so refreshes run unattended; otherwise `signin`. It also falls back to `signin` if the app fails; `spn` forces the app; `signin` uses your own sign-in, given once on the model's settings page; `existing` uses `CONNECTION_ID` | `spn`: the message names the tenant setting or role to fix. `signin`: it tells you where to sign in, then rerun with `DEPLOY = False` |
 # | Refresh | Full refresh, then waits for it | `ops.run_log` holds the service's error; usually a missing gold table or the connection |
 # | Probe | Counts rows in each model table through DAX | Zero rows means the gold table is empty: check the ingest for that source |
 #
@@ -26,7 +26,7 @@
 RUN_ID = ''
 MODELS = 'universal,consumption,agentEvaluator'   # keys to deploy; missing definition files are skipped
 DEFINITIONS_DIR = '/lakehouse/default/Files/universal_lake/models'
-CONNECTION_MODE = 'auto'             # 'auto' (the app; signin if that fails or there is no secret), 'spn', 'signin' or 'existing'
+CONNECTION_MODE = 'auto'             # 'auto' (workspace identity, else the app, else signin), 'spn', 'signin' or 'existing'
 CONNECTION_ID = ''                   # for CONNECTION_MODE = 'existing'
 CONNECTION_NAME = ''                 # blank: 'Universal Lake SQL <workspace id prefix>'
 DEPLOY = True                        # True: create or update; 'missing': create only absent models; False: only connect, refresh and probe
@@ -84,7 +84,9 @@ def find_model(key, name):
 #
 # The models load the Lakehouse SQL endpoint in **Import** mode.
 #
-# * `spn` (what `auto` picks when the app's secret is available): the model reads as the app registered in step 2,
+# * Workspace identity (what `auto` picks when `npm run deploy` connected the models): the model reads as the
+#   workspace's own identity. No secret, no sign-in, never expires.
+# * `spn` (what `auto` picks otherwise when the app's secret is available and the app is in Fabric's tenant): the model reads as the app registered in step 2,
 #   so refreshes run unattended. The notebook adds the app as **Viewer** on the workspace and creates a cloud
 #   connection signed in as the app. A Fabric admin must allow *Service principals can call Fabric public APIs*
 #   (Admin portal > Tenant settings > Developer settings) for the app or a group it is in. Rerun this notebook with
@@ -102,11 +104,36 @@ def app_secret():
     return None
 
 
+def token_tenant():
+    try:
+        p = notebookutils.credentials.getToken('pbi').split('.')[1]
+        return json.loads(base64.urlsafe_b64decode(p + '=' * (-len(p) % 4))).get('tid')
+    except Exception:
+        return None
+
+
+def has_identity_connection():
+    target = f'{server};{database}'.lower()
+    return any(str((c.get('connectionDetails') or {}).get('type')).upper() == 'SQL'
+               and str((c.get('connectionDetails') or {}).get('path')).lower() == target
+               and (c.get('credentialDetails') or {}).get('credentialType') == 'WorkspaceIdentity'
+               for c in rest_list('/connections'))
+
+
 AUTO_MODE = CONNECTION_MODE == 'auto'
 if AUTO_MODE:
-    CONNECTION_MODE = 'spn' if app_secret() else 'signin'
-    print(f'CONNECTION_MODE auto -> {CONNECTION_MODE}'
-          + ('' if CONNECTION_MODE == 'spn' else ' (no Key Vault or CLIENT_SECRET, so refreshes use your sign-in)'))
+    # The app can only sign in to a Lakehouse in its own tenant, so it is skipped when Fabric is elsewhere.
+    fabric_tenant, app_tenant = (token_tenant() or '').lower(), str(cfg('tenant_id') or '').lower()
+    if has_identity_connection():
+        CONNECTION_MODE, why = 'signin', 'uses the workspace identity connection that npm run deploy created'
+    elif not app_secret():
+        CONNECTION_MODE, why = 'signin', 'no Key Vault or CLIENT_SECRET, so refreshes use your sign-in'
+    elif fabric_tenant and len(app_tenant) == 36 and fabric_tenant != app_tenant:
+        CONNECTION_MODE, why = 'signin', ('the app is in another tenant than Fabric, so it cannot read this Lakehouse. '
+                                          'Run npm run deploy to connect the models with the workspace identity')
+    else:
+        CONNECTION_MODE, why = 'spn', 'the app'
+    print(f'CONNECTION_MODE auto -> {CONNECTION_MODE} ({why})')
 
 
 def ensure_app_viewer(secret):
