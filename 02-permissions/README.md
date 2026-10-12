@@ -108,7 +108,7 @@ The `Ingest_Azure_AI` notebook signs in as the app and reads three things from o
 
 ## Optional: do 2.1–2.4 with a script
 
-If you have the Azure CLI and a Key Vault you can write to, `setup-app.ps1` (run from the `UniversalLake` folder) registers the app, adds and consents the permissions, stores the secret in the vault and assigns the subscription roles. Assigning the roles needs the subscription access described in 2.4. It is safe to re-run; add `-WhatIf` to preview.
+If you have the Azure CLI and a Key Vault you can write to, `setup-app.ps1` (run from the `universal-lake` folder) registers the app, adds and consents the permissions, stores the secret in the vault and assigns the subscription roles. Assigning the roles needs the subscription access described in 2.4. It is safe to re-run; add `-WhatIf` to preview.
 
 ```powershell
 az login --tenant <tenant-id>

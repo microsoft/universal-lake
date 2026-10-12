@@ -62,22 +62,22 @@ flowchart LR
 * **APIs:** the app you register in step 2 pulls it automatically, every day. No files to handle.
 * **CSV exports:** a few sources (product feedback, Copilot Studio credits, Viva Copilot credits) have no API, so someone **exports them from an admin portal**. You save them in one folder and deploy uploads them.
 
-**1. Get the code.** Install Git, **Node.js 20.12+** and **Python 3.9+** (check with `git --version`, `node --version`, `python --version`). Then clone this repo (its URL is under **Code > Clone** at the top of its GitHub page). Everything it needs is inside; there's nothing else to download.
+**1. Get the code.** Install Git, **Node.js 20.12+** and **Python 3.9+** (check with `git --version`, `node --version`, `python --version`). Then get the code and make your own settings file:
 
 ```powershell
-git clone <this-repo-url> UniversalLake
-cd UniversalLake
+git clone https://github.com/microsoft/universal-lake.git
+cd universal-lake
 copy config.template.json config.json
 ```
 
-Your IDs stay in `config.json` on your PC; it is never uploaded to GitHub. Leave it as it is for now. Each setting has a `//` comment saying what it is and where it comes from; leave the comments in (your editor may underline them; that's fine). There's no `npm install`: the build uses only Node.js and Python. If `npm` is blocked on your PC (e.g. a Microsoft-managed device), see [If `npm` doesn't work](03-configure/README.md#if-npm-doesnt-work).
+You fill in `config.json` in step 3; it stays on your PC. If `npm` is blocked on your PC, see [If `npm` doesn't work](03-configure/README.md#if-npm-doesnt-work).
 
 **2. Decide which sources you want.** Look at the [data sources table](#data-sources). `copilotInteractions` and `orgData` are required; start with those and add others later if you like. Your choice decides the app's permissions in step 2, so make it now (you write it into `config.json` in step 3).
 
 **3. Start the CSV exports now (only for CSV sources you want).** They need admin roles you may not have, so ask early:
 
 * Find the role for each export in the [data sources table](#data-sources) and ask whoever has it.
-* Save **all the exported files in one folder on your PC**, outside this repo (for example `Documents\UniversalLake-exports`). Subfolders are fine. In step 3 you put this folder in `config.json` as `exportsFolder`; deploy recognises each file by its columns and uploads it.
+* Save **all the exported files in one folder on your PC**, outside this repo (for example `Documents\universal-lake-exports`). Subfolders are fine. In step 3 you put this folder in `config.json` as `exportsFolder`; deploy recognises each file by its columns and uploads it.
 * [Which Studio and Viva files](03-configure/README.md#studio-and-viva-which-files).
 * Can't get a file yet? You can still build the lake; that source's tables stay empty until you add it and deploy again.
 
