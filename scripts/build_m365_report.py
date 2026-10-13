@@ -1,0 +1,858 @@
+"""Restructure the M365 Usage Analytics template around one Copilot Readiness Score.
+
+    python scripts/build_m365_report.py
+
+- Removes Executive Summary, Adoption Momentum, Champions and Recommendations pages and the
+  models behind them (momentum, champion tiers, ranking signals, weight profiles).
+- Adds a Copilot Readiness measure table: one score (AI signal + M365 depth + consistency, gated on
+  how much Copilot Chat the tenant already uses) for assigning licences, and Benefit Signals
+  (meetings, documents viewed, email, edits) that map users to the Copilot feature they gain most from.
+- Adds Overview and Copilot Benefit Signals pages, rebuilds the Optimizer as Copilot License
+  Allocation, moves Trends and Activity to an appendix, rewrites the Glossary and enlarges fonts.
+Idempotent: rerunning on an already-built template does nothing.
+"""
+from __future__ import annotations
+
+import copy
+import json
+import re
+import sys
+import uuid
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+PBIT = ROOT / '08-report-templates' / 'M365 Usage Analytics - Fabric.pbit'
+PAGES = 'Report/definition/pages/'
+NS = uuid.uuid5(uuid.NAMESPACE_URL, 'valuelens/m365-report')
+
+P_OVERVIEW, P_ALLOC, P_BENEFIT = 'overview001', 'a1b2c3d4e5f600000001', 'benefitsignals001'
+P_DR, P_ENABLE, P_TRENDS, P_ACTIVITY, P_GLOSSARY = (
+    'departmentreadiness001', 'adbf32b1278020e04455', 'f63c748780527f551aba', 'd5b2e80e57a009cd4e30',
+    'ccedb229eb1459101de3')
+DROP_PAGES = ['1f11f9f2410d635f0a23', 'adoptionmomentum001', 'a1b2c3d4e5f600000002', '3e1c8f8fd039de95a07b']
+PAGE_ORDER = [P_OVERVIEW, P_ALLOC, P_BENEFIT, P_DR, P_ENABLE, P_TRENDS, P_ACTIVITY, P_GLOSSARY]
+
+DROP_TABLES = ['Momentum Metric', 'Adoption Momentum', 'Champion Tier', 'Agent Toggle', 'Ranking Signals',
+               'LP Measures', 'LP Weight Profiles', 'LP Action Categories', 'Teams Weight %', 'Outlook Weight %',
+               'Word Weight %', 'Excel Weight %', 'PowerPoint Weight %', 'Copilot Chat Weight %']
+DROP_MEASURE_PATTERNS = [r'^OPT Selected Tier Pct$', r'^OPT Include Agents Flag$', r'^OPT Signal ',
+                         r'^OPT License First ', r'^OPT Is License First Candidate$',
+                         r'^OPT Copilot Actions \(Adjusted\)$', r'^OPT Champion', r'^OPT Avg Champion Actions$',
+                         r'^OPT Agent-Active Champions Count$', r'^OPT Is Champion Flag$', r'^OPT Dept User Count$',
+                         r'^DR Champion ', r'^AM ', r'^LP ', r' Weight Value$']
+DROP_VISUALS = {P_ENABLE: ['ccb39d20d32044620a9c'],
+                P_GLOSSARY: ['114738bb03164c274ad3', '8c633bbc512947e38376', '9ef37c1029bc21ab0791',
+                             'ab977c3e28ecb283455c', 'e1eeb95707a00d8dbd00', 'e55f407dee007181559e']}
+
+RT = 'Copilot Readiness'
+LOCAL_DATE = "'LocalDateTable_522ea86a-24e9-4ff9-aab0-99205813ddbc'"
+PURPLE, GREEN, ORANGE, BLUE = '#4B2D83', '#2EA44F', '#D9822B', '#0F6CBD'
+
+
+def tag(name: str) -> str:
+    return str(uuid.uuid5(NS, name))
+
+
+# ----------------------------------------------------------------------------------------- model
+
+def win(prefix: str) -> str:
+    return (f'SWITCH([RS Window], "L30", MAX(EntraUsers[{prefix}_L30]), "L60", MAX(EntraUsers[{prefix}_L60]), '
+            f'MAX(EntraUsers[{prefix}_Full]))')
+
+
+def in_window(n: str = '[OPT Selected Lookback Days]') -> str:
+    return (f'VAR N = {n}\nVAR Ref = CALCULATE(MAX(M365Usage[CreationDate]), ALL(M365Usage), REMOVEFILTERS(EntraUsers))\n'
+            'RETURN\n')
+
+
+def window_filters() -> str:
+    return f'REMOVEFILTERS({LOCAL_DATE}), M365Usage[CreationDate] > Ref - N, M365Usage[CreationDate] <= Ref'
+
+
+def bs_sum(ops) -> str:
+    ops_list = ', '.join(f'"{o}"' for o in ops)
+    return (in_window() + f'COALESCE(CALCULATE(SUM(M365Usage[EventCount]), M365Usage[Operation] IN {{{ops_list}}}, '
+            f'{window_filters()}), 0)')
+
+
+def chat_users(w: str) -> str:
+    return (f'CALCULATE(DISTINCTCOUNT(EntraUsers[userPrincipalName]), REMOVEFILTERS(EntraUsers), '
+            f'EntraUsers[hasLicense] <> TRUE(), EntraUsers[CopilotChatRaw_{w}] > 0)')
+
+
+def per_user(m: str) -> str:
+    return f'DIVIDE([{m}], [BS Active Users])'
+
+
+def index(m: str) -> str:
+    return f'DIVIDE([{m}], CALCULATE(DIVIDE([{m}], [BS Active Users]), ALLSELECTED(EntraUsers)))'
+
+
+RS_MEASURES = [
+    ('RS Window', 'VAR D = [OPT Selected Inactivity Days]\nRETURN SWITCH(TRUE(), D <= 30, "L30", D <= 60, "L60", "Full")',
+     None, '00 Settings'),
+    ('RS Window Days', 'SWITCH([RS Window], "L30", 30, "L60", 60, 90)', '0', '00 Settings'),
+    ('RS Focus', 'SELECTEDVALUE(\'Readiness Focus\'[Focus], "Balanced")', None, '00 Settings'),
+    ('RS Is Unlicensed', 'IF(HASONEVALUE(EntraUsers[userPrincipalName]) && '
+     'CALCULATE(COUNTROWS(EntraUsers), EntraUsers[hasLicense] = TRUE()) = 0, 1, 0)', '0', '00 Settings'),
+    ('RS AI Percentile', f'COALESCE({win("CECopilotPercentile")}, 0)', '0', '10 Components'),
+    ('RS M365 Percentile', f'COALESCE({win("CERank_M365AllApps")}, 0)', '0', '10 Components'),
+    ('RS Teams Percentile', f'COALESCE({win("CERank_Teams")}, 0)', '0', '10 Components'),
+    ('RS Outlook Percentile', f'COALESCE({win("CERank_Outlook")}, 0)', '0', '10 Components'),
+    ('RS Word Percentile', f'COALESCE({win("CERank_Word")}, 0)', '0', '10 Components'),
+    ('RS Excel Percentile', f'COALESCE({win("CERank_Excel")}, 0)', '0', '10 Components'),
+    ('RS PowerPoint Percentile', f'COALESCE({win("CERank_PowerPoint")}, 0)', '0', '10 Components'),
+    ('RS Depth Percentile', 'SWITCH([RS Focus],\n    "Collaborators", ([RS Teams Percentile] + [RS Outlook Percentile]) / 2,\n'
+     '    "Content creators", ([RS Word Percentile] + [RS PowerPoint Percentile]) / 2,\n'
+     '    "Analysts", [RS Excel Percentile],\n    [RS M365 Percentile])', '0', '10 Components'),
+    ('RS Active Days', in_window('[RS Window Days]') +
+     f'COALESCE(CALCULATE(DISTINCTCOUNT(M365Usage[CreationDate]), {window_filters()}), 0)', '0', '10 Components'),
+    ('RS Consistency', 'MIN(100, DIVIDE([RS Active Days], [RS Window Days] * 5 / 7) * 100)', '0', '10 Components'),
+    ('RS Tenant AI Signal', 'VAR Unlicensed = CALCULATE(DISTINCTCOUNT(EntraUsers[userPrincipalName]), '
+     'REMOVEFILTERS(EntraUsers), EntraUsers[hasLicense] <> TRUE())\n'
+     f'VAR ChatUsers = SWITCH([RS Window], "L30", {chat_users("L30")}, "L60", {chat_users("L60")}, {chat_users("Full")})\n'
+     'RETURN DIVIDE(ChatUsers, Unlicensed, 0)', '0.0%', '20 Gate'),
+    ('RS Weight AI', 'VAR G = [RS Tenant AI Signal] RETURN SWITCH(TRUE(), G >= 0.05, 0.40, G >= 0.01, 0.10, 0)',
+     '0%', '20 Gate'),
+    ('RS Weight Depth', 'VAR G = [RS Tenant AI Signal] RETURN SWITCH(TRUE(), G >= 0.05, 0.40, G >= 0.01, 0.65, 0.75)',
+     '0%', '20 Gate'),
+    ('RS Weight Consistency', 'VAR G = [RS Tenant AI Signal] RETURN IF(G >= 0.05, 0.20, 0.25)', '0%', '20 Gate'),
+    ('RS Gate Message', 'VAR G = [RS Tenant AI Signal]\nRETURN SWITCH(TRUE(),\n'
+     '    G >= 0.05, "Strong AI signal: " & FORMAT(G, "0%") & " of unlicensed users already use Copilot Chat. '
+     'Score = 40% Copilot Chat use + 40% M365 depth + 20% consistency.",\n'
+     '    G >= 0.01, "Early AI signal: " & FORMAT(G, "0.0%") & " of unlicensed users use Copilot Chat. '
+     'Score = 10% Copilot Chat use + 65% M365 depth + 25% consistency.",\n'
+     '    "Little Copilot Chat use yet, so readiness is based on M365 depth (75%) and consistency (25%). '
+     'Promote Copilot Chat to build an AI signal.")', None, '20 Gate'),
+    ('RS Score', 'IF([RS Is Unlicensed] = 1,\n    ROUND([RS Weight AI] * [RS AI Percentile] + [RS Weight Depth] * '
+     '[RS Depth Percentile] + [RS Weight Consistency] * [RS Consistency], 0))', '0', '30 Score'),
+    ('RS Tier', 'VAR S = [RS Score]\nRETURN IF(NOT ISBLANK(S), SWITCH(TRUE(), S >= 70, "Assign now", S >= 50, '
+     '"Next wave", S >= 30, "Nurture", "Not yet"))', None, '30 Score'),
+    ('RS Persona', 'VAR C = ([RS Teams Percentile] + [RS Outlook Percentile]) / 2\n'
+     'VAR W = ([RS Word Percentile] + [RS PowerPoint Percentile]) / 2\nVAR A = [RS Excel Percentile]\n'
+     'VAR Hi = MAX(MAX(C, W), A)\nVAR Lo = MIN(MIN(C, W), A)\n'
+     'RETURN IF(NOT ISBLANK([RS Score]), SWITCH(TRUE(), Hi < 25, "Light user", Lo >= 50 && Hi - Lo <= 10, '
+     '"All-rounder", Hi = C, "Collaborator", Hi = W, "Content creator", "Analyst"))', None, '30 Score'),
+    ('RS Why', 'VAR Lbl = SWITCH([RS Focus], "Collaborators", "Teams+Outlook", "Content creators", "Word+PPT", '
+     '"Analysts", "Excel", "M365")\nRETURN IF(NOT ISBLANK([RS Score]), "AI P" & [RS AI Percentile] & " · " & Lbl & '
+     '" P" & ROUND([RS Depth Percentile], 0) & " · " & [RS Active Days] & " active days")', None, '30 Score'),
+    ('RS Assign Now Count', 'COALESCE(COUNTROWS(FILTER(VALUES(EntraUsers[userPrincipalName]), '
+     'CALCULATE([RS Score]) >= 70)), 0)', '#,0', '40 Summary'),
+    ('RS Next Wave Count', 'COALESCE(COUNTROWS(FILTER(VALUES(EntraUsers[userPrincipalName]), '
+     'VAR S = CALCULATE([RS Score]) RETURN S >= 50 && S < 70)), 0)', '#,0', '40 Summary'),
+    ('RS Avg Readiness', 'AVERAGEX(VALUES(EntraUsers[userPrincipalName]), CALCULATE([RS Score]))', '0', '40 Summary'),
+    ('RS Users in Tier', "VAR T = SELECTEDVALUE('Readiness Tier'[Tier])\nRETURN COALESCE(COUNTROWS(FILTER("
+     'VALUES(EntraUsers[userPrincipalName]), CALCULATE([RS Tier]) = T)), 0)', '#,0', '40 Summary'),
+]
+
+BS_MEASURES = [
+    ('BS Meetings Attended', bs_sum(['MeetingParticipantDetail']), '#,0'),
+    ('BS Docs Viewed', bs_sum(['FileAccessed', 'FilePreviewed', 'FileViewed']), '#,0'),
+    ('BS Docs Edited', bs_sum(['FileModified']), '#,0'),
+    ('BS Emails Sent', bs_sum(['Send']), '#,0'),
+    ('BS Emails Read', bs_sum(['MailItemsAccessed']), '#,0'),
+    ('BS Emails', '[BS Emails Sent] + [BS Emails Read]', '#,0'),
+    ('BS Active Users', in_window() + f'COALESCE(CALCULATE(DISTINCTCOUNT(M365Usage[UserId]), {window_filters()}), 0)',
+     '#,0'),
+    ('BS Meetings per User', per_user('BS Meetings Attended'), '#,0.0'),
+    ('BS Docs Viewed per User', per_user('BS Docs Viewed'), '#,0.0'),
+    ('BS Docs Edited per User', per_user('BS Docs Edited'), '#,0.0'),
+    ('BS Emails per User', per_user('BS Emails'), '#,0.0'),
+    ('BS Meetings Index', index('BS Meetings Attended'), '0.0x'),
+    ('BS Docs Viewed Index', index('BS Docs Viewed'), '0.0x'),
+    ('BS Docs Edited Index', index('BS Docs Edited'), '0.0x'),
+    ('BS Emails Index', index('BS Emails'), '0.0x'),
+    ('BS Top Benefit', 'VAR M = COALESCE([BS Meetings Index], 0)\nVAR D = COALESCE([BS Docs Viewed Index], 0)\n'
+     'VAR E = COALESCE([BS Emails Index], 0)\nVAR W = COALESCE([BS Docs Edited Index], 0)\n'
+     'VAR Hi = MAX(MAX(M, D), MAX(E, W))\nRETURN IF(HASONEVALUE(EntraUsers[userPrincipalName]), SWITCH(TRUE(),\n'
+     '    Hi < 0.5, "Low M365 activity",\n    Hi = M, "Meeting recap & follow-ups",\n    Hi = D, "Summarise documents",\n'
+     '    Hi = E, "Email triage & drafting",\n    "Draft & rewrite content"))', None),
+    ('BS Heavy Meeting Users', 'COALESCE(COUNTROWS(FILTER(VALUES(EntraUsers[userPrincipalName]), '
+     'CALCULATE([BS Meetings Index]) >= 1.5)), 0)', '#,0'),
+]
+
+DR_ACTION = '''VAR M365Pct = [DR Average M365 Percentile]
+VAR Gap = [DR Readiness Gap]
+VAR Coverage = [DR License Coverage]
+VAR Utilization = [DR Licensed Utilization]
+VAR TargetRate = [DR Enablement Target Rate]
+RETURN
+SWITCH(
+    TRUE(),
+    ISBLANK(M365Pct), "Insufficient data",
+    M365Pct < 40, "Build M365 foundations",
+    Utilization < 0.50 && Coverage >= 0.50, "Enable licensed users",
+    Gap >= 15 && Coverage < 0.75, "Assign + enable",
+    Gap >= 15, "Target Copilot enablement",
+    TargetRate >= 0.20, "Run enablement campaign",
+    "Maintain and monitor"
+)'''
+
+GLOSSARY = [
+    ('Overview', [
+        ('About this page', 'Start here. Four numbers answer: how many Copilot licences are idle, what they cost, who is ready for one and who needs enablement.'),
+        ('Idle Copilot licences', 'Licensed users with no Copilot activity within the selected inactivity window (default 60 days).'),
+        ('Monthly reclaim value', 'Idle licences x $30 per month list price.'),
+        ('Ready to assign', 'Unlicensed users with a Copilot Readiness Score of 70 or more.'),
+        ('Users to enable', 'Users in the top half of M365 activity but the bottom half of Copilot use: the fastest enablement wins.'),
+        ('Readiness tiers chart', 'Unlicensed users grouped by readiness tier: Assign now (70+), Next wave (50-69), Nurture (30-49), Not yet (<30).'),
+    ]),
+    ('Copilot License Allocation', [
+        ('About this page', 'One page for both sides of licence allocation: reclaim or enable idle licences on the left, assign the freed licences to the highest-scoring users on the right.'),
+        ('Inactivity window', 'Days without Copilot activity before a licence counts as idle. Also sets the activity window the readiness score uses (30, 60 or full history).'),
+        ('Readiness focus', 'Which M365 behaviour counts as depth: Balanced (all apps), Collaborators (Teams + Outlook), Content creators (Word + PowerPoint) or Analysts (Excel).'),
+        ('Suggested action', 'Enable when the idle user is still active in M365 (activity at least equal to the lookback days); otherwise Reclaim.'),
+        ('Copilot Readiness Score', 'A 0-100 score for unlicensed users = AI weight x Copilot Chat percentile + depth weight x focus percentile + consistency weight x consistency.'),
+        ('AI signal gate', 'Share of unlicensed users already using Copilot Chat. 5% or more: weights 40/40/20. 1-5%: 10/65/25. Under 1%: 0/75/25, so tenants new to Copilot are scored on M365 behaviour alone.'),
+        ('Consistency', 'Distinct active M365 days in the window divided by working days in the window (window x 5/7), capped at 100.'),
+        ('Tier', 'Assign now (70+), Next wave (50-69), Nurture (30-49), Not yet (<30).'),
+        ('Persona', 'Strongest app group: Collaborator (Teams + Outlook), Content creator (Word + PowerPoint), Analyst (Excel), All-rounder (all 50+ and within 10 points) or Light user (all under 25).'),
+        ('Why', 'The three score inputs for the user: Copilot Chat percentile, focus percentile and active days.'),
+    ]),
+    ('Copilot Benefit Signals', [
+        ('About this page', 'Shows how much each user would gain from specific Copilot features, using M365 behaviour as a proxy. Useful even when no one uses Copilot yet.'),
+        ('Meetings attended', 'Teams MeetingParticipantDetail events in the lookback window. Benefits: meeting recap, notes and follow-ups.'),
+        ('Documents viewed', 'FileAccessed, FilePreviewed and FileViewed events. Benefits: summarise long documents.'),
+        ('Emails', 'Emails sent (Send) plus mail items read (MailItemsAccessed). Benefits: inbox triage and drafting.'),
+        ('Documents edited', 'FileModified events. Benefits: draft and rewrite content.'),
+        ('Index', "A user's value divided by the average per active user in the current selection: 2.0x means twice the typical load."),
+        ('Top benefit', 'The Copilot feature matching the user\'s highest index. Users whose highest index is under 0.5x show Low M365 activity.'),
+    ]),
+    ('Department Readiness', [
+        ('About this page', 'Which departments to prioritise for licences and enablement.'),
+        ('License coverage', 'Licensed users divided by department users.'),
+        ('Licensed utilization', 'Licensed users with Copilot activity divided by licensed users.'),
+        ('Prompts per active user', 'Copilot prompts divided by active Copilot users.'),
+        ('Avg readiness score', 'Average Copilot Readiness Score of unlicensed users in scope.'),
+        ('Readiness gap', 'Average M365 percentile minus average Copilot percentile. A positive gap means M365-heavy users who are not yet using Copilot.'),
+        ('Enablement target rate', 'Share of users with M365 percentile 50+ and Copilot percentile under 50.'),
+        ('Recommended action', 'Build M365 foundations, Enable licensed users, Assign + enable, Target Copilot enablement, Run enablement campaign, or Maintain and monitor.'),
+    ]),
+    ('Enablement', [
+        ('About this page', 'Prioritised list of users to coach, grouped by quadrant.'),
+        ('Quadrants', 'Targets (high M365, low Copilot): train. Champions (high both): advocate. AI-First (low M365, high Copilot): validate. Low Engagement (low both): build adoption.'),
+    ]),
+    ('Appendix: Trends', [
+        ('About this page', 'Reference view of M365 activity over time by app and activity tier.'),
+        ('Activity tiers', 'Top 10%, 10-25%, 25-50% and bottom 50% of users by M365 activity percentile.'),
+    ]),
+    ('Appendix: Activity', [
+        ('About this page', 'Reference view of active days, engagement segments and app activity by Copilot licence status.'),
+        ('Engagement segment', 'Daily (5+ days a week), Frequent (3-4), Moderate (1-2), Light (under 1).'),
+        ('Activity metrics', 'Teams: messages sent, read and meetings. Outlook: emails sent and read. Word, Excel, PowerPoint: views, edits, downloads, uploads.'),
+    ]),
+    ('Glossary', [
+        ('Data sources', 'M365 unified audit log, Entra user attributes, Copilot licence assignments and Copilot interaction logs, read from the Fabric lakehouse.'),
+        ('Percentiles', 'Each user is ranked against all users for each app and for Copilot; P90 means more active than 90% of users.'),
+    ]),
+]
+
+
+def calc_table(name: str, cols, rows) -> dict:
+    types = {'STRING': 'string', 'INTEGER': 'int64'}
+    spec = ', '.join(f'"{c}", {t}' for c, t in cols)
+    body = ', '.join('{' + ', '.join(f'"{v}"' if isinstance(v, str) else str(v) for v in r) + '}' for r in rows)
+    columns = [{'type': 'calculatedTableColumn', 'name': c, 'dataType': types[t], 'isNameInferred': True,
+                'isDataTypeInferred': True, 'sourceColumn': f'[{c}]', 'lineageTag': tag(f'{name}.{c}'),
+                'summarizeBy': 'none', 'annotations': [{'name': 'SummarizationSetBy', 'value': 'Automatic'}]}
+               for c, t in cols]
+    columns[0]['sortByColumn'] = cols[1][0]
+    columns[1]['isHidden'] = True
+    return {'name': name, 'lineageTag': tag(name), 'columns': columns,
+            'partitions': [{'name': name, 'mode': 'import',
+                            'source': {'type': 'calculated', 'expression': f'DATATABLE({spec}, {{{body}}})'}}],
+            'annotations': [{'name': 'PBI_Id', 'value': tag(name).replace('-', '')}]}
+
+
+def glossary_expr() -> str:
+    rows = []
+    for po, (page, items) in enumerate(GLOSSARY, 1):
+        for mo, (metric, desc) in enumerate(items, 1):
+            q = lambda s: '"' + s.replace('"', '""') + '"'
+            rows.append(f'        {{{q(page)}, {q(metric)}, {q(desc)}, {po}, {mo}}}')
+    return ('DATATABLE(\n    "Page", STRING,\n    "Metric", STRING,\n    "Description", STRING,\n'
+            '    "PageOrder", INTEGER,\n    "MetricOrder", INTEGER,\n    {\n' + ',\n'.join(rows) + '\n    }\n)')
+
+
+def expr(x) -> str:
+    e = x.get('expression', '')
+    return '\n'.join(e) if isinstance(e, list) else e
+
+
+def table_refs(name: str) -> str:
+    return rf"('{re.escape(name)}'|(?<![\w'])" + (re.escape(name) + r'\[' if re.fullmatch(r'\w+', name) else '(?!)') + ')'
+
+
+def build_model(model: dict) -> tuple[set, set]:
+    m = model['model']
+    tables = {t['name']: t for t in m['tables']}
+    if RT in tables:
+        return set(), set()
+    for col in ('CECopilotPercentile', 'CERank_M365AllApps', 'CERank_Teams', 'CopilotChatRaw'):
+        for w in ('L30', 'L60', 'Full'):
+            if not any(c['name'] == f'{col}_{w}' for c in tables['EntraUsers']['columns']):
+                sys.exit(f'EntraUsers[{col}_{w}] missing')
+
+    dr = next(x for x in tables['Department Readiness']['measures'] if x['name'] == 'DR Recommended Action')
+    dr['expression'] = DR_ACTION.split('\n')
+
+    dead_t = {t for t in DROP_TABLES if t in tables}
+    dead_m = {(t['name'], x['name']) for t in m['tables'] for x in t.get('measures', [])
+              if t['name'] in dead_t or any(re.search(p, x['name']) for p in DROP_MEASURE_PATTERNS)}
+    while True:
+        names = {n for _, n in dead_m}
+        pat = re.compile('|'.join([table_refs(t) for t in dead_t] + [r'\[' + re.escape(n) + r'\]' for n in names]))
+        more = {(t['name'], x['name']) for t in m['tables'] if t['name'] not in dead_t
+                for x in t.get('measures', []) if (t['name'], x['name']) not in dead_m and pat.search(expr(x))}
+        if not more:
+            break
+        dead_m |= more
+    for t in m['tables']:
+        if t['name'] in dead_t:
+            continue
+        for c in t.get('columns', []):
+            if c.get('type') == 'calculated' and pat.search(expr(c)):
+                sys.exit(f'calculated column {t["name"]}[{c["name"]}] uses a removed object')
+        for p in t.get('partitions', []):
+            if p['source'].get('type') == 'calculated' and pat.search(expr(p['source'])):
+                sys.exit(f'calculated table {t["name"]} uses a removed object')
+
+    m['tables'] = [t for t in m['tables'] if t['name'] not in dead_t]
+    for t in m['tables']:
+        if 'measures' in t:
+            t['measures'] = [x for x in t['measures'] if (t['name'], x['name']) not in dead_m]
+    m['relationships'] = [r for r in m.get('relationships', [])
+                          if r['fromTable'] not in dead_t and r['toTable'] not in dead_t]
+    for c in m.get('cultures', []):
+        content = c.get('linguisticMetadata', {}).get('content')
+        if not isinstance(content, dict):
+            continue
+        ents = content.get('Entities', {})
+        gone = {k for k, v in ents.items() if (b := v.get('Definition', {}).get('Binding', {}))
+                and (b.get('ConceptualEntity') in dead_t or (b.get('ConceptualEntity'), b.get('ConceptualProperty')) in dead_m)}
+        for k in gone:
+            del ents[k]
+        rels = content.get('Relationships', {})
+        for k in [k for k, v in rels.items() if v.get('Binding', {}).get('ConceptualEntity') in dead_t
+                  or any(r.get('Target', {}).get('Entity') in gone for r in v.get('Roles', {}).values())]:
+            del rels[k]
+    ann = next((a for a in m.get('annotations', []) if a['name'] == 'PBI_QueryOrder'), None)
+    if ann:
+        ann['value'] = json.dumps([q for q in json.loads(ann['value']) if q not in dead_t])
+
+    rt = copy.deepcopy(tables['Optimizer Measures'])
+    rt.update(name=RT, lineageTag=tag(RT), annotations=[{'name': 'PBI_Id', 'value': tag(RT).replace('-', '')}])
+    rt.pop('isHidden', None)
+    rt['columns'][0]['lineageTag'] = tag(RT + '.Value')
+    rt['partitions'][0]['name'] = RT
+    rt['measures'] = []
+    for n, e, f, folder in RS_MEASURES:
+        rt['measures'].append({'name': n, 'expression': e.split('\n'), **({'formatString': f} if f else {}),
+                               'displayFolder': f'Readiness Score\\{folder}', 'lineageTag': tag(n)})
+    for n, e, f in BS_MEASURES:
+        rt['measures'].append({'name': n, 'expression': e.split('\n'), **({'formatString': f} if f else {}),
+                               'displayFolder': 'Benefit Signals', 'lineageTag': tag(n)})
+    m['tables'] += [rt,
+                    calc_table('Readiness Focus', [('Focus', 'STRING'), ('SortOrder', 'INTEGER')],
+                               [('Balanced', 1), ('Collaborators', 2), ('Content creators', 3), ('Analysts', 4)]),
+                    calc_table('Readiness Tier', [('Tier', 'STRING'), ('SortOrder', 'INTEGER')],
+                               [('Assign now', 1), ('Next wave', 2), ('Nurture', 3), ('Not yet', 4)])]
+
+    gl = next(t for t in m['tables'] if {'Page', 'Metric', 'Description'} <= {c['name'] for c in t['columns']})
+    gl['partitions'][0]['source']['expression'] = glossary_expr().split('\n')
+    return dead_t, dead_m
+
+
+def clean_diagram(data: bytes, dead_t: set) -> bytes:
+    d = json.loads(data.decode('utf-16-le').lstrip('\ufeff'))
+    for dg in d.get('diagrams', []):
+        dg['nodes'] = [n for n in dg.get('nodes', []) if n.get('nodeIndex') not in dead_t]
+    return json.dumps(d, ensure_ascii=False).encode('utf-16-le')
+
+
+# ---------------------------------------------------------------------------------------- report
+
+def lit(v: str) -> dict:
+    return {'expr': {'Literal': {'Value': v}}}
+
+
+def field(entity: str, prop: str, kind: str = 'Measure') -> dict:
+    return {kind: {'Expression': {'SourceRef': {'Entity': entity}}, 'Property': prop}}
+
+
+def proj(entity: str, prop: str, kind: str = 'Measure', label: str | None = None) -> dict:
+    p = {'field': field(entity, prop, kind), 'queryRef': f'{entity}.{prop}', 'nativeQueryRef': label or prop}
+    if label:
+        p['displayName'] = label
+    if kind == 'Column':
+        p['active'] = True
+    return p
+
+
+class Report:
+    def __init__(self, files: dict):
+        self.f = files
+
+    def key(self, page: str, vid: str) -> str:
+        return f'{PAGES}{page}/visuals/{vid}/visual.json'
+
+    def get(self, page: str, vid: str) -> dict:
+        return json.loads(self.f[self.key(page, vid)])
+
+    def put(self, page: str, v: dict):
+        self.f[self.key(page, v['name'])] = json.dumps(v, ensure_ascii=False, indent=2).encode('utf-8')
+
+    def page(self, page: str) -> dict:
+        return json.loads(self.f[f'{PAGES}{page}/page.json'])
+
+    def put_page(self, page: str, p: dict):
+        self.f[f'{PAGES}{page}/page.json'] = json.dumps(p, ensure_ascii=False, indent=2).encode('utf-8')
+
+    def visuals(self, page: str):
+        pre = f'{PAGES}{page}/visuals/'
+        return sorted(k[len(pre):].split('/')[0] for k in self.f if k.startswith(pre) and k.endswith('/visual.json'))
+
+    def drop(self, prefix: str):
+        for k in [k for k in self.f if k.startswith(prefix)]:
+            del self.f[k]
+
+    def clone(self, src_page: str, src: str, page: str, name: str, pos: tuple) -> dict:
+        v = self.get(src_page, src)
+        v['name'] = name
+        x, y, w, h = pos
+        v['position'].update(x=x, y=y, width=w, height=h)
+        v.pop('filterConfig', None)
+        return v
+
+
+def set_text(v: dict, paragraphs):
+    """paragraphs: list of lists of (text, size_pt, bold, color)."""
+    out = []
+    for runs in paragraphs:
+        tr = []
+        for text, size, bold, color in runs:
+            st = {'fontFamily': 'Segoe UI Semibold' if bold else 'Segoe UI', 'fontSize': f'{size}pt', 'color': color}
+            if bold:
+                st['fontWeight'] = 'bold'
+            tr.append({'value': text, 'textStyle': st})
+        out.append({'textRuns': tr})
+    v['visual']['objects']['general'][0]['properties']['paragraphs'] = out
+
+
+def retext(v: dict, text: str):
+    paras = v['visual']['objects']['general'][0]['properties']['paragraphs']
+    first = next(r for p in paras for r in p.get('textRuns', []) if r.get('value', '').strip())
+    first = copy.deepcopy(first)
+    first['value'] = text
+    v['visual']['objects']['general'][0]['properties']['paragraphs'] = [{'textRuns': [first]}]
+
+
+def set_title(v: dict, text: str):
+    t = v['visual'].setdefault('visualContainerObjects', {}).setdefault('title', [{'properties': {}}])
+    t[0]['properties']['show'] = lit('true')
+    t[0]['properties']['text'] = lit("'" + text.replace("'", "''") + "'")
+
+
+def norm_ref(s: str) -> str:
+    return re.sub(r"'([^']*)'", r'\1', s)
+
+
+def set_query(v: dict, roles: dict, sort: tuple | None = None):
+    q = v['visual'].setdefault('query', {})
+    q['queryState'] = {r: {'projections': ps} for r, ps in roles.items()}
+    if sort:
+        e, p, kind, direction = sort
+        q['sortDefinition'] = {'sort': [{'field': field(e, p, kind), 'direction': direction}]}
+    else:
+        q.pop('sortDefinition', None)
+    refs = {p['queryRef'] for ps in roles.values() for p in ps}
+    for name, entries in list(v['visual'].get('objects', {}).items()):
+        keep = [o for o in entries if 'metadata' not in o.get('selector', {})
+                or norm_ref(o['selector']['metadata']) in refs]
+        if keep:
+            v['visual']['objects'][name] = keep
+        else:
+            del v['visual']['objects'][name]
+
+
+def set_alt(v: dict, text: str):
+    g = v['visual'].get('visualContainerObjects', {}).get('general')
+    if g:
+        g[0]['properties']['altText'] = lit("'" + text.replace("'", "''") + "'")
+
+
+def card(r: Report, page: str, name: str, pos: tuple, measure: tuple, label: str, accent: str, size: str = '22D'):
+    v = r.clone(P_DR, 'dr_kpi_coverage', page, name, pos)
+    set_query(v, {'Data': [proj(measure[0], measure[1], 'Measure', label)]})
+    o = v['visual']['objects']
+    o['accentBar'][0]['properties']['color'] = {'solid': {'color': lit(f"'{accent}'")}}
+    o['value'][0]['properties']['fontColor'] = {'solid': {'color': lit(f"'{accent}'")}}
+    o['value'][0]['properties']['fontSize'] = lit(size)
+    set_alt(v, label)
+    r.put(page, v)
+    return v
+
+
+def header(r: Report, page: str, title: str, subtitle: str):
+    for vid in ('dr_header_background', 'dr_logo'):
+        v = r.get(P_DR, vid)
+        r.put(page, v)
+    t = r.clone(P_DR, 'dr_title', page, 'hdr_title', (64, 2, 900, 40))
+    set_text(t, [[(title, 20, True, '#FFFFFF')]])
+    r.put(page, t)
+    s = r.clone(P_DR, 'dr_subtitle', page, 'hdr_subtitle', (64, 40, 1100, 22))
+    set_text(s, [[(subtitle, 11, False, '#FFFFFF')]])
+    r.put(page, s)
+
+
+def new_page(r: Report, pid: str, name: str):
+    p = r.page(P_DR)
+    p['name'], p['displayName'] = pid, name
+    p.pop('pageBinding', None)
+    p.pop('visualInteractions', None)
+    r.put_page(pid, p)
+
+
+def gate_banner(r: Report, page: str, name: str, pos: tuple):
+    v = card(r, page, name, pos, (RT, 'RS Gate Message'), 'How the readiness score is weighted', BLUE, '11D')
+    o = v['visual']['objects']
+    o['value'][0]['properties']['textWrap'] = lit('true')
+    o['value'][0]['properties']['fontFamily'] = lit("'Segoe UI'")
+    o['value'][0]['properties']['bold'] = lit('false')
+    o['value'][0]['properties']['fontColor'] = {'solid': {'color': lit("'#1B1F27'")}}
+    o['label'][0]['properties']['show'] = lit('false')
+    o['accentBar'][0]['properties']['position'] = lit("'Left'")
+    r.put(page, v)
+
+
+def build_overview(r: Report):
+    new_page(r, P_OVERVIEW, 'Overview')
+    header(r, P_OVERVIEW, 'Copilot Value Overview',
+           'Where to reclaim idle Copilot licences, who to assign them to, and who to enable next')
+    cards = [('ov_kpi_idle', ('Optimizer Measures', 'OPT Inactive Licensed Count Display'), 'Idle Copilot licences', PURPLE),
+             ('ov_kpi_value', ('Optimizer Measures', 'OPT Monthly Reclaim Value Display'), 'Monthly reclaim value', PURPLE),
+             ('ov_kpi_ready', (RT, 'RS Assign Now Count'), 'Ready to assign (score 70+)', GREEN),
+             ('ov_kpi_enable', ('Department Readiness', 'DR Enablement Target Users'), 'Users to enable (high M365, low Copilot)', ORANGE)]
+    for i, (name, m, label, color) in enumerate(cards):
+        card(r, P_OVERVIEW, name, (16 + i * 316, 76, 300, 96), m, label, color, '26D')
+    gate_banner(r, P_OVERVIEW, 'ov_gate', (16, 184, 1248, 48))
+
+    tiers = r.clone(P_DR, 'dr_gap_chart', P_OVERVIEW, 'ov_tier_chart', (16, 244, 400, 300))
+    set_query(tiers, {'Category': [proj('Readiness Tier', 'Tier', 'Column', 'Readiness tier')],
+                      'Y': [proj(RT, 'RS Users in Tier', 'Measure', 'Unlicensed users')]},
+              ('Readiness Tier', 'Tier', 'Column', 'Ascending'))
+    set_title(tiers, 'Unlicensed users by Copilot readiness')
+    set_alt(tiers, 'Unlicensed users by Copilot readiness tier')
+    r.put(P_OVERVIEW, tiers)
+
+    days = r.clone(P_ACTIVITY, 'bc1024f0092583955bb5', P_OVERVIEW, 'ov_days_chart', (432, 244, 400, 300))
+    set_title(days, 'Copilot-licensed users are more active in M365 (days per week)')
+    r.put(P_OVERVIEW, days)
+
+    gap = r.clone(P_DR, 'dr_gap_chart', P_OVERVIEW, 'ov_gap_chart', (848, 244, 416, 300))
+    set_title(gap, 'Departments with the biggest enablement opportunity')
+    r.put(P_OVERVIEW, gap)
+
+    guide = r.clone(P_DR, 'dr_title', P_OVERVIEW, 'ov_guide', (16, 556, 1248, 152))
+    dark, grey = '#1B1F27', '#5A6472'
+    set_text(guide, [
+        [('How to use this report', 13, True, dark)],
+        [('1  Copilot License Allocation  ', 11, True, PURPLE), ('reclaim idle licences and assign them to the highest-scoring users.', 11, False, grey)],
+        [('2  Copilot Benefit Signals  ', 11, True, PURPLE), ('see which Copilot feature (meeting recap, summarise, email, drafting) each user would gain most from.', 11, False, grey)],
+        [('3  Department Readiness  ', 11, True, PURPLE), ('choose which departments to license and enable first.', 11, False, grey)],
+        [('4  Enablement  ', 11, True, PURPLE), ('the prioritised list of users to coach. Appendix pages hold the detailed M365 usage trends; the Glossary defines every metric.', 11, False, grey)],
+    ])
+    r.put(P_OVERVIEW, guide)
+
+
+def build_benefit(r: Report):
+    new_page(r, P_BENEFIT, 'Copilot Benefit Signals')
+    header(r, P_BENEFIT, 'Copilot Benefit Signals',
+           'Who gains most from Copilot, and from which feature, based on how they already work in M365')
+    cards = [('bs_kpi_meet', 'BS Meetings per User', 'Meetings attended per user', PURPLE),
+             ('bs_kpi_docs', 'BS Docs Viewed per User', 'Documents viewed per user', BLUE),
+             ('bs_kpi_mail', 'BS Emails per User', 'Emails sent + read per user', GREEN),
+             ('bs_kpi_edit', 'BS Docs Edited per User', 'Documents edited per user', ORANGE)]
+    for i, (name, m, label, color) in enumerate(cards):
+        card(r, P_BENEFIT, name, (16 + i * 182, 76, 170, 96), (RT, m), label, color)
+    win_s = r.clone(P_DR, 'dr_window', P_BENEFIT, 'bs_window', (748, 76, 248, 96))
+    set_query(win_s, {'Values': [proj('Lookback Window', 'Label', 'Column')]})
+    set_title(win_s, 'Lookback window')
+    r.put(P_BENEFIT, win_s)
+    lic = r.clone(P_DR, 'dr_country', P_BENEFIT, 'bs_license', (1016, 76, 248, 96))
+    set_query(lic, {'Values': [proj('EntraUsers', 'Has Copilot License', 'Column')]})
+    set_title(lic, 'Copilot licence')
+    r.put(P_BENEFIT, lic)
+
+    chart = r.clone(P_DR, 'dr_gap_chart', P_BENEFIT, 'bs_dept_chart', (16, 184, 500, 524))
+    set_query(chart, {'Category': [proj('EntraUsers', 'department', 'Column', 'Department')],
+                      'Y': [proj(RT, 'BS Meetings per User', 'Measure', 'Meetings'),
+                            proj(RT, 'BS Docs Viewed per User', 'Measure', 'Docs viewed'),
+                            proj(RT, 'BS Emails per User', 'Measure', 'Emails'),
+                            proj(RT, 'BS Docs Edited per User', 'Measure', 'Docs edited')]},
+              (RT, 'BS Meetings per User', 'Measure', 'Descending'))
+    set_title(chart, 'M365 activity per user by department')
+    set_alt(chart, 'Meetings, documents viewed, emails and edits per user by department')
+    r.put(P_BENEFIT, chart)
+
+    tbl = r.clone(P_ALLOC, 'v_tbl_assign', P_BENEFIT, 'bs_user_table', (532, 184, 732, 524))
+    set_query(tbl, {'Values': [proj('EntraUsers', 'displayName', 'Column', 'User'),
+                               proj('EntraUsers', 'department', 'Column', 'Department'),
+                               proj(RT, 'BS Meetings Attended', 'Measure', 'Meetings'),
+                               proj(RT, 'BS Docs Viewed', 'Measure', 'Docs viewed'),
+                               proj(RT, 'BS Emails', 'Measure', 'Emails'),
+                               proj(RT, 'BS Docs Edited', 'Measure', 'Docs edited'),
+                               proj(RT, 'BS Top Benefit', 'Measure', 'Top Copilot benefit')]},
+              (RT, 'BS Meetings Attended', 'Measure', 'Descending'))
+    set_title(tbl, 'Who benefits most, and from which Copilot feature')
+    r.put(P_BENEFIT, tbl)
+
+
+def build_allocation(r: Report):
+    p = r.page(P_ALLOC)
+    p['displayName'] = 'Copilot License Allocation'
+    r.put_page(P_ALLOC, p)
+    v = r.get(P_ALLOC, 'eca78a6c6b8bca067600')
+    retext(v, 'Copilot License Allocation')
+    r.put(P_ALLOC, v)
+    v = r.get(P_ALLOC, '102a0884856ee3516d7e')
+    retext(v, 'Left: reclaim or enable idle licences. Right: assign freed licences to the users with the highest Copilot Readiness Score.')
+    r.put(P_ALLOC, v)
+    v = r.get(P_ALLOC, 'v_side_lbl_sig')
+    retext(v, 'Readiness focus')
+    v['position'].update(height=34)
+    r.put(P_ALLOC, v)
+    v = r.get(P_ALLOC, 'v_slc_sig')
+    set_query(v, {'Values': [proj('Readiness Focus', 'Focus', 'Column')]})
+    v['visual']['objects'].setdefault('selection', [{'properties': {}}])[0]['properties']['singleSelect'] = lit('true')
+    r.put(P_ALLOC, v)
+
+    v = r.get(P_ALLOC, 'v_kpi_4')
+    v.pop('filterConfig', None)
+    set_query(v, {'Values': [proj(RT, 'RS Assign Now Count', 'Measure', 'Ready to assign')]})
+    set_title(v, '⭐  Ready to Assign (score 70+)')
+    r.put(P_ALLOC, v)
+
+    v = r.get(P_ALLOC, 'v_tbl_assign')
+    v.pop('filterConfig', None)
+    v['position'].update(y=216, height=488)
+    set_query(v, {'Values': [proj('EntraUsers', 'displayName', 'Column', 'User'),
+                             proj('EntraUsers', 'department', 'Column', 'Department'),
+                             proj(RT, 'RS Score', 'Measure', 'Score'),
+                             proj(RT, 'RS Tier', 'Measure', 'Tier'),
+                             proj(RT, 'RS Persona', 'Measure', 'Persona'),
+                             proj(RT, 'RS Why', 'Measure', 'Why')]},
+              (RT, 'RS Score', 'Measure', 'Descending'))
+    set_title(v, '⭐  Assign Next: Copilot Readiness Score')
+    r.put(P_ALLOC, v)
+    gate_banner(r, P_ALLOC, 'v_gate', (807, 172, 461, 40))
+
+
+def build_dr(r: Report):
+    p = r.page(P_DR)
+    p['displayName'] = 'Department Readiness'
+    r.put_page(P_DR, p)
+    v = r.get(P_DR, 'dr_kpi_champions')
+    set_query(v, {'Data': [proj(RT, 'RS Avg Readiness', 'Measure', 'Avg readiness score (unlicensed)')]})
+    set_alt(v, 'Average Copilot Readiness Score of unlicensed users')
+    r.put(P_DR, v)
+    v = r.get(P_DR, 'dr_action_table')
+    roles = {k: s['projections'] for k, s in v['visual']['query']['queryState'].items()}
+    vals = []
+    for pr in roles['Values']:
+        if pr['field']['Measure']['Property'] == 'DR Champion Rate':
+            vals += [proj(RT, 'RS Avg Readiness', 'Measure', 'Avg Readiness Score'),
+                     proj(RT, 'RS Assign Now Count', 'Measure', 'Ready to Assign')]
+        else:
+            vals.append(pr)
+    roles['Values'] = vals
+    sort = v['visual']['query'].get('sortDefinition')
+    set_query(v, roles)
+    if sort and 'Champion' not in json.dumps(sort):
+        v['visual']['query']['sortDefinition'] = sort
+    r.put(P_DR, v)
+    t = r.get(P_DR, 'dr_title')
+    retext(t, 'Department Readiness')
+    r.put(P_DR, t)
+    s = r.get(P_DR, 'dr_subtitle')
+    retext(s, 'Which departments to license and enable first: coverage, utilization, readiness gap and recommended action')
+    r.put(P_DR, s)
+
+
+def rename(r: Report, page: str, title_vid: str, name: str):
+    p = r.page(page)
+    p['displayName'] = name
+    r.put_page(page, p)
+    v = r.get(page, title_vid)
+    retext(v, name)
+    r.put(page, v)
+
+
+TITLES = {P_ALLOC: 'eca78a6c6b8bca067600', P_ENABLE: 'd95a03997924d476c805', P_TRENDS: '536bc5bf159dab30065e',
+          P_ACTIVITY: '0c5207fd21033081c888', P_GLOSSARY: 'c08b3bf77c9303ce33e0', P_DR: 'dr_title',
+          P_OVERVIEW: 'hdr_title', P_BENEFIT: 'hdr_title'}
+SUBTITLES = {P_ALLOC: '102a0884856ee3516d7e', P_ENABLE: '50e580404b0541a2b049', P_GLOSSARY: 'ba4c6965487c8709910d',
+             P_DR: 'dr_subtitle'}
+
+
+def bump(v: dict, minimum: int):
+    def walk(o):
+        if isinstance(o, dict):
+            for k, val in o.items():
+                if k in ('fontSize', 'textSize') and isinstance(val, dict):
+                    lv = val.get('expr', {}).get('Literal', {})
+                    mt = re.fullmatch(r'(\d+(?:\.\d+)?)D', lv.get('Value', ''))
+                    if mt and float(mt.group(1)) < minimum:
+                        lv['Value'] = f'{minimum}D'
+                else:
+                    walk(val)
+        elif isinstance(o, list):
+            for x in o:
+                walk(x)
+    walk(v['visual'].get('objects', {}))
+    walk(v['visual'].get('visualContainerObjects', {}))
+
+
+def fonts(r: Report, page: str):
+    for vid in r.visuals(page):
+        v = r.get(page, vid)
+        vt = v['visual']['visualType']
+        if vt == 'textbox':
+            size = 20 if TITLES.get(page) == vid else 12 if SUBTITLES.get(page) == vid else None
+            for para in v['visual']['objects']['general'][0]['properties']['paragraphs']:
+                for run in para.get('textRuns', []):
+                    st = run.setdefault('textStyle', {})
+                    cur = float(str(st.get('fontSize', '10pt')).rstrip('pt') or 10)
+                    st['fontSize'] = f'{size}pt' if size else f'{max(cur, 10):g}pt'
+            if size == 20 and page not in (P_DR, P_OVERVIEW, P_BENEFIT):
+                v['position']['height'] = max(v['position']['height'], 40)
+            if size == 12 and page != P_DR:
+                v['position']['height'] = max(v['position']['height'], 24)
+            if size == 12 and page == P_DR:
+                v['position'].update(y=40, height=22)
+                for para in v['visual']['objects']['general'][0]['properties']['paragraphs']:
+                    for run in para.get('textRuns', []):
+                        run['textStyle']['fontSize'] = '11pt'
+            if size == 20 and page == P_DR:
+                v['position'].update(y=2, height=40)
+        else:
+            bump(v, 11 if vt in ('tableEx', 'pivotTable') else 10)
+            t = v['visual'].get('visualContainerObjects', {}).get('title')
+            if t and vt not in ('card', 'cardVisual', 'slicer', 'advancedSlicerVisual'):
+                fs = t[0]['properties'].get('fontSize')
+                if fs:
+                    mt = re.fullmatch(r'(\d+(?:\.\d+)?)D', fs['expr']['Literal']['Value'])
+                    if mt and float(mt.group(1)) < 12:
+                        fs['expr']['Literal']['Value'] = '12D'
+            if vt == 'cardVisual':
+                for o in v['visual']['objects'].get('value', []):
+                    fs = o['properties'].get('fontSize')
+                    if fs and fs['expr']['Literal']['Value'] == '18D':
+                        fs['expr']['Literal']['Value'] = '22D'
+        r.put(page, v)
+    if page == P_ALLOC:
+        v = r.get(P_ALLOC, '102a0884856ee3516d7e')
+        v['position'].update(y=40, height=26, width=1100)
+        r.put(P_ALLOC, v)
+
+
+def build_report(r: Report):
+    for pid in DROP_PAGES:
+        r.drop(f'{PAGES}{pid}/')
+    for pid, vids in DROP_VISUALS.items():
+        for vid in vids:
+            r.drop(f'{PAGES}{pid}/visuals/{vid}/')
+    build_allocation(r)
+    build_dr(r)
+    build_overview(r)
+    build_benefit(r)
+    rename(r, P_TRENDS, TITLES[P_TRENDS], 'Appendix: M365 Usage Trends')
+    rename(r, P_ACTIVITY, TITLES[P_ACTIVITY], 'Appendix: M365 Usage Activity')
+    rename(r, P_ENABLE, TITLES[P_ENABLE], 'Copilot Enablement')
+    v = r.get(P_ENABLE, SUBTITLES[P_ENABLE])
+    retext(v, 'Who to coach first: users highly active in M365 but not yet using Copilot are the fastest wins')
+    v['position'].update(width=1000)
+    r.put(P_ENABLE, v)
+    v = r.get(P_ENABLE, 'b416d2b1a41ed8aaeed4')
+    set_text(v, [[('Quadrant guide   ', 11, True, '#1B1F27'),
+                  ('Targets (high M365, low Copilot): train   |   Champions (high both): advocate   |   '
+                   'AI-First (low M365, high Copilot): validate   |   Low Engagement: build adoption', 11, False, '#5A6472')]])
+    r.put(P_ENABLE, v)
+    for pid in PAGE_ORDER:
+        fonts(r, pid)
+    meta = json.loads(r.f[f'{PAGES}pages.json'])
+    meta['pageOrder'] = PAGE_ORDER
+    meta['activePageName'] = P_OVERVIEW
+    r.f[f'{PAGES}pages.json'] = json.dumps(meta, ensure_ascii=False, indent=2).encode('utf-8')
+
+
+def broken_refs(r: Report, model: dict) -> set:
+    m = model['model']
+    measures = {(t['name'], x['name']) for t in m['tables'] for x in t.get('measures', [])}
+    columns = {(t['name'], c['name']) for t in m['tables'] for c in t.get('columns', [])}
+    problems = []
+    for k, data in r.f.items():
+        if not k.startswith(PAGES) or not k.endswith('.json'):
+            continue
+        s = json.loads(data)
+
+        def walk(o):
+            if isinstance(o, dict):
+                for kind in ('Measure', 'Column'):
+                    f = o.get(kind)
+                    if isinstance(f, dict) and 'Property' in f and 'Entity' in f.get('Expression', {}).get('SourceRef', {}):
+                        ent = f['Expression']['SourceRef']['Entity']
+                        if (ent, f['Property']) not in (measures if kind == 'Measure' else columns):
+                            problems.append(f'{k.split("/")[3]}/{k.split("/")[5] if k.count("/") > 5 else ""}: '
+                                            f'{kind} {ent}[{f["Property"]}]')
+                for val in o.values():
+                    walk(val)
+            elif isinstance(o, list):
+                for x in o:
+                    walk(x)
+        walk(s)
+    return set(problems)
+
+
+def validate(r: Report, model: dict, baseline: set):
+    problems = broken_refs(r, model) - baseline
+    pages = {k.split('/')[3] for k in r.f if k.startswith(PAGES) and k.count('/') > 3}
+    if set(PAGE_ORDER) != pages:
+        problems.add(f'page folders {sorted(pages)} != order')
+    if problems:
+        sys.exit('Broken references:\n  ' + '\n  '.join(sorted(problems)))
+
+
+def main():
+    with zipfile.ZipFile(PBIT) as z:
+        infos = [i for i in z.infolist() if i.filename != 'SecurityBindings']
+        files = {i.filename: z.read(i.filename) for i in infos}
+    model = json.loads(files['DataModelSchema'].decode('utf-16-le').lstrip('\ufeff'))
+    if any(t['name'] == RT for t in model['model']['tables']):
+        print('already built')
+        return
+    baseline = broken_refs(Report(dict(files)), model)
+    dead_t, dead_m = build_model(model)
+    print(f'removed {len(dead_t)} tables, {len(dead_m)} measures:')
+    for t, n in sorted(dead_m):
+        print(f'  {t}[{n}]')
+    files['DataModelSchema'] = json.dumps(model, ensure_ascii=False, indent=2).encode('utf-16-le')
+    if 'DiagramLayout' in files:
+        files['DiagramLayout'] = clean_diagram(files['DiagramLayout'], dead_t)
+    r = Report(files)
+    build_report(r)
+    validate(r, model, baseline)
+
+    by_name = {i.filename: i for i in infos}
+    tmp = PBIT.with_suffix('.tmp')
+    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as z:
+        for name, data in r.f.items():
+            info = by_name.get(name) or zipfile.ZipInfo(name, date_time=infos[0].date_time)
+            z.writestr(info, data, compress_type=by_name[name].compress_type if name in by_name else zipfile.ZIP_DEFLATED)
+    tmp.replace(PBIT)
+    print(f'built {PBIT.name}')
+
+
+if __name__ == '__main__':
+    main()
