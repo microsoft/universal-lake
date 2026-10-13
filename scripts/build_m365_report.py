@@ -86,7 +86,7 @@ def per_user(m: str) -> str:
 
 
 def index(m: str) -> str:
-    return f'DIVIDE([{m}], CALCULATE(DIVIDE([{m}], [BS Active Users]), ALLSELECTED(EntraUsers)))'
+    return f'DIVIDE({per_user(m)}, CALCULATE({per_user(m)}, ALLSELECTED(EntraUsers)))'
 
 
 RS_MEASURES = [
@@ -118,13 +118,11 @@ RS_MEASURES = [
     ('RS Weight Depth', 'VAR G = [RS Tenant AI Signal] RETURN SWITCH(TRUE(), G >= 0.05, 0.40, G >= 0.01, 0.65, 0.75)',
      '0%', '20 Gate'),
     ('RS Weight Consistency', 'VAR G = [RS Tenant AI Signal] RETURN IF(G >= 0.05, 0.20, 0.25)', '0%', '20 Gate'),
-    ('RS Gate Message', 'VAR G = [RS Tenant AI Signal]\nRETURN SWITCH(TRUE(),\n'
-     '    G >= 0.05, "Strong AI signal: " & FORMAT(G, "0%") & " of unlicensed users already use Copilot Chat. '
-     'Score = 40% Copilot Chat use + 40% M365 depth + 20% consistency.",\n'
-     '    G >= 0.01, "Early AI signal: " & FORMAT(G, "0.0%") & " of unlicensed users use Copilot Chat. '
-     'Score = 10% Copilot Chat use + 65% M365 depth + 25% consistency.",\n'
-     '    "Little Copilot Chat use yet, so readiness is based on M365 depth (75%) and consistency (25%). '
-     'Promote Copilot Chat to build an AI signal.")', None, '20 Gate'),
+    ('RS Gate Message', 'VAR G = [RS Tenant AI Signal]\nVAR Pre = "AI signal: " & FORMAT(G, "0.0%") & '
+     '" of unlicensed users already use Copilot Chat. "\nRETURN SWITCH(TRUE(),\n'
+     '    G >= 0.05, Pre & "Score = 40% Copilot Chat & agent use + 40% M365 depth + 20% consistency.",\n'
+     '    G >= 0.01, Pre & "Score = 10% Copilot Chat & agent use + 65% M365 depth + 25% consistency.",\n'
+     '    Pre & "Too few to rank on, so Score = 75% M365 depth + 25% consistency.")', None, '20 Gate'),
     ('RS Score', 'IF([RS Is Unlicensed] = 1,\n    ROUND([RS Weight AI] * [RS AI Percentile] + [RS Weight Depth] * '
      '[RS Depth Percentile] + [RS Weight Consistency] * [RS Consistency], 0))', '0', '30 Score'),
     ('RS Tier', 'VAR S = [RS Score]\nRETURN IF(NOT ISBLANK(S), SWITCH(TRUE(), S >= 70, "Assign now", S >= 50, '
@@ -134,9 +132,22 @@ RS_MEASURES = [
      'VAR Hi = MAX(MAX(C, W), A)\nVAR Lo = MIN(MIN(C, W), A)\n'
      'RETURN IF(NOT ISBLANK([RS Score]), SWITCH(TRUE(), Hi < 25, "Light user", Lo >= 50 && Hi - Lo <= 10, '
      '"All-rounder", Hi = C, "Collaborator", Hi = W, "Content creator", "Analyst"))', None, '30 Score'),
+    ('RS Chat Prompts', 'VAR N = [RS Window Days]\nVAR Ref = CALCULATE(MAX(M365CopilotSessions[CreationDate]), '
+     'ALL(M365CopilotSessions), REMOVEFILTERS(EntraUsers))\nRETURN COALESCE(CALCULATE(SUMX(M365CopilotSessions, '
+     'VALUE(M365CopilotSessions[PromptCount]) - VALUE(M365CopilotSessions[AgentPromptCount])), '
+     'FILTER(ALL(M365CopilotSessions[CreationDate]), M365CopilotSessions[CreationDate] > Ref - N && '
+     'M365CopilotSessions[CreationDate] <= Ref)), 0)', '#,0', '10 Components'),
+    ('RS Agent Prompts', 'VAR N = [RS Window Days]\nVAR Ref = CALCULATE(MAX(M365CopilotSessions[CreationDate]), '
+     'ALL(M365CopilotSessions), REMOVEFILTERS(EntraUsers))\nRETURN COALESCE(CALCULATE(SUMX(M365CopilotSessions, '
+     'VALUE(M365CopilotSessions[AgentPromptCount])), FILTER(ALL(M365CopilotSessions[CreationDate]), '
+     'M365CopilotSessions[CreationDate] > Ref - N && M365CopilotSessions[CreationDate] <= Ref)), 0)',
+     '#,0', '10 Components'),
     ('RS Why', 'VAR Lbl = SWITCH([RS Focus], "Collaborators", "Teams+Outlook", "Content creators", "Word+PPT", '
-     '"Analysts", "Excel", "M365")\nRETURN IF(NOT ISBLANK([RS Score]), "AI P" & [RS AI Percentile] & " · " & Lbl & '
-     '" P" & ROUND([RS Depth Percentile], 0) & " · " & [RS Active Days] & " active days")', None, '30 Score'),
+     '"Analysts", "Excel", "M365")\nVAR AI = [RS Chat Prompts] + [RS Agent Prompts]\n'
+     'RETURN IF(NOT ISBLANK([RS Score]), IF(AI > 0, "Already uses Copilot Chat (" & [RS Chat Prompts] & '
+     '" prompts, " & [RS Agent Prompts] & " agent)", "No Copilot Chat yet") & " · " & Lbl & " busier than " & '
+     'ROUND([RS Depth Percentile], 0) & "% of users · active " & [RS Active Days] & " of " & [RS Window Days] & '
+     '" days")', None, '30 Score'),
     ('RS Assign Now Count', 'COALESCE(COUNTROWS(FILTER(VALUES(EntraUsers[userPrincipalName]), '
      'CALCULATE([RS Score]) >= 70)), 0)', '#,0', '40 Summary'),
     ('RS Next Wave Count', 'COALESCE(COUNTROWS(FILTER(VALUES(EntraUsers[userPrincipalName]), '
@@ -163,11 +174,15 @@ BS_MEASURES = [
     ('BS Docs Viewed Index', index('BS Docs Viewed'), '0.0x'),
     ('BS Docs Edited Index', index('BS Docs Edited'), '0.0x'),
     ('BS Emails Index', index('BS Emails'), '0.0x'),
+    ('BS Top Index', 'MAX(MAX(COALESCE([BS Meetings Index], 0), COALESCE([BS Docs Viewed Index], 0)), '
+     'MAX(COALESCE([BS Emails Index], 0), COALESCE([BS Docs Edited Index], 0)))', '0.0x'),
     ('BS Top Benefit', 'VAR M = COALESCE([BS Meetings Index], 0)\nVAR D = COALESCE([BS Docs Viewed Index], 0)\n'
      'VAR E = COALESCE([BS Emails Index], 0)\nVAR W = COALESCE([BS Docs Edited Index], 0)\n'
-     'VAR Hi = MAX(MAX(M, D), MAX(E, W))\nRETURN IF(HASONEVALUE(EntraUsers[userPrincipalName]), SWITCH(TRUE(),\n'
-     '    Hi < 0.5, "Low M365 activity",\n    Hi = M, "Meeting recap & follow-ups",\n    Hi = D, "Summarise documents",\n'
-     '    Hi = E, "Email triage & drafting",\n    "Draft & rewrite content"))', None),
+     'VAR Hi = [BS Top Index]\nVAR X = " (" & FORMAT(Hi, "0.0") & "x avg "\n'
+     'RETURN IF(ISINSCOPE(EntraUsers[displayName]), SWITCH(TRUE(),\n'
+     '    Hi < 0.5, "Low M365 activity",\n    Hi = M, "Meeting recap & follow-ups" & X & "meetings)",\n'
+     '    Hi = D, "Summarise documents" & X & "docs viewed)",\n'
+     '    Hi = E, "Email triage & drafting" & X & "email)",\n    "Draft & rewrite content" & X & "edits)"))', None),
     ('BS Heavy Meeting Users', 'COALESCE(COUNTROWS(FILTER(VALUES(EntraUsers[userPrincipalName]), '
      'CALCULATE([BS Meetings Index]) >= 1.5)), 0)', '#,0'),
 ]
@@ -205,10 +220,12 @@ GLOSSARY = [
         ('Suggested action', 'Enable when the idle user is still active in M365 (activity at least equal to the lookback days); otherwise Reclaim.'),
         ('Copilot Readiness Score', 'A 0-100 score for unlicensed users = AI weight x Copilot Chat percentile + depth weight x focus percentile + consistency weight x consistency.'),
         ('AI signal gate', 'Share of unlicensed users already using Copilot Chat. 5% or more: weights 40/40/20. 1-5%: 10/65/25. Under 1%: 0/75/25, so tenants new to Copilot are scored on M365 behaviour alone.'),
+        ('Copilot Chat / Agent prompts', 'Prompts the user sent to Copilot Chat and to agents in the window. Any use by an unlicensed user is direct evidence of demand; it feeds the Copilot use part of the score.'),
+        ('M365 depth', 'How much busier the user is than others in the focus apps, as a percentile: 85 means busier than 85% of active users.'),
         ('Consistency', 'Distinct active M365 days in the window divided by working days in the window (window x 5/7), capped at 100.'),
         ('Tier', 'Assign now (70+), Next wave (50-69), Nurture (30-49), Not yet (<30).'),
         ('Persona', 'Strongest app group: Collaborator (Teams + Outlook), Content creator (Word + PowerPoint), Analyst (Excel), All-rounder (all 50+ and within 10 points) or Light user (all under 25).'),
-        ('Why', 'The three score inputs for the user: Copilot Chat percentile, focus percentile and active days.'),
+        ('Why', 'Plain-language reason for the score: Copilot Chat and agent prompts, M365 depth percentile and active days.'),
     ]),
     ('Copilot Benefit Signals', [
         ('About this page', 'Shows how much each user would gain from specific Copilot features, using M365 behaviour as a proxy. Useful even when no one uses Copilot yet.'),
@@ -216,8 +233,8 @@ GLOSSARY = [
         ('Documents viewed', 'FileAccessed, FilePreviewed and FileViewed events. Benefits: summarise long documents.'),
         ('Emails', 'Emails sent (Send) plus mail items read (MailItemsAccessed). Benefits: inbox triage and drafting.'),
         ('Documents edited', 'FileModified events. Benefits: draft and rewrite content.'),
-        ('Index', "A user's value divided by the average per active user in the current selection: 2.0x means twice the typical load."),
-        ('Top benefit', 'The Copilot feature matching the user\'s highest index. Users whose highest index is under 0.5x show Low M365 activity.'),
+        ('Index', "A user's value divided by the average per active user in the current selection: 2.0x means twice the typical load, 1.0x is average."),
+        ('Top benefit', 'The Copilot feature matching the user\'s highest index, with that multiple, e.g. "Meeting recap (3.2x avg meetings)". Users whose highest index is under 0.5x show Low M365 activity.'),
     ]),
     ('Department Readiness', [
         ('About this page', 'Which departments to prioritise for licences and enablement.'),
@@ -231,7 +248,8 @@ GLOSSARY = [
     ]),
     ('Enablement', [
         ('About this page', 'Prioritised list of users to coach, grouped by quadrant.'),
-        ('Quadrants', 'Targets (high M365, low Copilot): train. Champions (high both): advocate. AI-First (low M365, high Copilot): validate. Low Engagement (low both): build adoption.'),
+        ('How to read it', 'Each user gets two percentiles from 0 to 100: M365 (for the chosen app) and Copilot. 50 is the split. Percentiles rank only users with some activity, so with few active users even light use can rank high.'),
+        ('Quadrants', 'Targets (high M365, low Copilot): train. Champions (high both): advocate. AI-First (low M365, high Copilot): validate. Low Engagement (low both): build M365 habits before Copilot.'),
     ]),
     ('Appendix: Trends', [
         ('About this page', 'Reference view of M365 activity over time by app and activity tier.'),
@@ -361,7 +379,23 @@ def build_model(model: dict) -> tuple[set, set]:
 
     gl = next(t for t in m['tables'] if {'Page', 'Metric', 'Description'} <= {c['name'] for c in t['columns']})
     gl['partitions'][0]['source']['expression'] = glossary_expr().split('\n')
+    drop_copilot_lens(m)
     return dead_t, dead_m
+
+
+def drop_copilot_lens(m: dict):
+    # Copilot vs Copilot always gives a zero gap, so the lens is removed from the app selector.
+    pat = re.compile(r',\s*\{\s*"Copilot"\s*,\s*6\s*\}')
+    for t in m['tables']:
+        for p in t.get('partitions', []):
+            src = p['source']
+            e = src.get('expression')
+            if src.get('type') != 'calculated' or e is None or not pat.search(expr(src)):
+                continue
+            new = pat.sub('', expr(src))
+            src['expression'] = new.split('\n') if isinstance(e, list) else new
+            return
+    sys.exit('App Selection Copilot row not found')
 
 
 def clean_diagram(data: bytes, dead_t: set) -> bytes:
@@ -385,8 +419,6 @@ def proj(entity: str, prop: str, kind: str = 'Measure', label: str | None = None
     p = {'field': field(entity, prop, kind), 'queryRef': f'{entity}.{prop}', 'nativeQueryRef': label or prop}
     if label:
         p['displayName'] = label
-    if kind == 'Column':
-        p['active'] = True
     return p
 
 
@@ -544,6 +576,13 @@ def build_overview(r: Report):
               ('Readiness Tier', 'Tier', 'Column', 'Ascending'))
     set_title(tiers, 'Unlicensed users by Copilot readiness')
     set_alt(tiers, 'Unlicensed users by Copilot readiness tier')
+    tva = tiers['visual']['objects']['valueAxis'][0]['properties']
+    tva['titleText'] = lit("'Unlicensed users'")
+    tva['labelDisplayUnits'] = lit("'1'")
+    tva['labelPrecision'] = lit('0L')
+    for lp in tiers['visual']['objects'].get('labels', []):
+        lp.setdefault('properties', {})['labelDisplayUnits'] = lit("'1'")
+        lp['properties']['labelPrecision'] = lit('0L')
     r.put(P_OVERVIEW, tiers)
 
     days = r.clone(P_ACTIVITY, 'bc1024f0092583955bb5', P_OVERVIEW, 'ov_days_chart', (432, 244, 400, 300))
@@ -587,13 +626,18 @@ def build_benefit(r: Report):
 
     chart = r.clone(P_DR, 'dr_gap_chart', P_BENEFIT, 'bs_dept_chart', (16, 184, 500, 524))
     set_query(chart, {'Category': [proj('EntraUsers', 'department', 'Column', 'Department')],
-                      'Y': [proj(RT, 'BS Meetings per User', 'Measure', 'Meetings'),
-                            proj(RT, 'BS Docs Viewed per User', 'Measure', 'Docs viewed'),
-                            proj(RT, 'BS Emails per User', 'Measure', 'Emails'),
-                            proj(RT, 'BS Docs Edited per User', 'Measure', 'Docs edited')]},
-              (RT, 'BS Meetings per User', 'Measure', 'Descending'))
-    set_title(chart, 'M365 activity per user by department')
-    set_alt(chart, 'Meetings, documents viewed, emails and edits per user by department')
+                      'Y': [proj(RT, 'BS Meetings Index', 'Measure', 'Meetings'),
+                            proj(RT, 'BS Docs Viewed Index', 'Measure', 'Docs viewed'),
+                            proj(RT, 'BS Emails Index', 'Measure', 'Emails'),
+                            proj(RT, 'BS Docs Edited Index', 'Measure', 'Docs edited')]},
+              (RT, 'BS Meetings Index', 'Measure', 'Descending'))
+    va = chart['visual']['objects']['valueAxis'][0]['properties']
+    va['titleText'] = lit("'Load vs. average user (1.0 = average)'")
+    va['labelDisplayUnits'] = lit("'1'")
+    va['labelPrecision'] = lit('1L')
+    chart['visual']['objects']['labels'] = [{'properties': {'show': lit('false')}}]
+    set_title(chart, 'Which departments carry the most load Copilot can lighten')
+    set_alt(chart, 'Meetings, documents viewed, emails and edits per user by department, indexed to the average user')
     r.put(P_BENEFIT, chart)
 
     tbl = r.clone(P_ALLOC, 'v_tbl_assign', P_BENEFIT, 'bs_user_table', (532, 184, 732, 524))
@@ -603,10 +647,18 @@ def build_benefit(r: Report):
                                proj(RT, 'BS Docs Viewed', 'Measure', 'Docs viewed'),
                                proj(RT, 'BS Emails', 'Measure', 'Emails'),
                                proj(RT, 'BS Docs Edited', 'Measure', 'Docs edited'),
-                               proj(RT, 'BS Top Benefit', 'Measure', 'Top Copilot benefit')]},
-              (RT, 'BS Meetings Attended', 'Measure', 'Descending'))
-    set_title(tbl, 'Who benefits most, and from which Copilot feature')
+                               proj(RT, 'BS Top Index', 'Measure', 'Strength vs avg'),
+                               proj(RT, 'BS Top Benefit', 'Measure', 'Biggest Copilot benefit (why)')]},
+              (RT, 'BS Top Index', 'Measure', 'Descending'))
+    word_wrap(tbl)
+    set_title(tbl, 'Who benefits most, and why: their load compared with the average user')
     r.put(P_BENEFIT, tbl)
+
+
+def word_wrap(v: dict):
+    o = v['visual'].setdefault('objects', {})
+    for k in ('columnHeaders', 'values'):
+        o.setdefault(k, [{'properties': {}}])[0]['properties']['wordWrap'] = lit('true')
 
 
 def build_allocation(r: Report):
@@ -634,19 +686,27 @@ def build_allocation(r: Report):
     set_title(v, '⭐  Ready to Assign (score 70+)')
     r.put(P_ALLOC, v)
 
+    v = r.get(P_ALLOC, 'v_tbl_reclaim')
+    v['position'].update(x=232, width=400)
+    word_wrap(v)
+    r.put(P_ALLOC, v)
+
     v = r.get(P_ALLOC, 'v_tbl_assign')
     v.pop('filterConfig', None)
-    v['position'].update(y=216, height=488)
+    v['position'].update(x=644, y=216, width=620, height=488)
     set_query(v, {'Values': [proj('EntraUsers', 'displayName', 'Column', 'User'),
                              proj('EntraUsers', 'department', 'Column', 'Department'),
                              proj(RT, 'RS Score', 'Measure', 'Score'),
-                             proj(RT, 'RS Tier', 'Measure', 'Tier'),
-                             proj(RT, 'RS Persona', 'Measure', 'Persona'),
+                             proj(RT, 'RS Chat Prompts', 'Measure', 'Copilot Chat prompts'),
+                             proj(RT, 'RS Agent Prompts', 'Measure', 'Agent prompts'),
+                             proj(RT, 'RS Depth Percentile', 'Measure', 'M365 depth (pctl)'),
+                             proj(RT, 'RS Active Days', 'Measure', 'Active days'),
                              proj(RT, 'RS Why', 'Measure', 'Why')]},
               (RT, 'RS Score', 'Measure', 'Descending'))
-    set_title(v, '⭐  Assign Next: Copilot Readiness Score')
+    word_wrap(v)
+    set_title(v, '⭐  Assign Next: who scores highest, and the evidence')
     r.put(P_ALLOC, v)
-    gate_banner(r, P_ALLOC, 'v_gate', (807, 172, 461, 40))
+    gate_banner(r, P_ALLOC, 'v_gate', (644, 172, 620, 40))
 
 
 def build_dr(r: Report):
@@ -777,7 +837,12 @@ def build_report(r: Report):
     v = r.get(P_ENABLE, 'b416d2b1a41ed8aaeed4')
     set_text(v, [[('Quadrant guide   ', 11, True, '#1B1F27'),
                   ('Targets (high M365, low Copilot): train   |   Champions (high both): advocate   |   '
-                   'AI-First (low M365, high Copilot): validate   |   Low Engagement: build adoption', 11, False, '#5A6472')]])
+                   'AI-First (low M365, high Copilot): validate   |   Low Engagement (low both): build M365 habits first', 11, False, '#5A6472')]])
+    r.put(P_ENABLE, v)
+    v = r.get(P_ENABLE, '637d7412d0d864bc8e7a')
+    set_text(v, [[('How to read   ', 11, True, '#1B1F27'),
+                  ('Each user has an M365 percentile for the chosen app and a Copilot percentile (0-100, ranked among active users; 50 is the split). '
+                   'Low Engagement = under 50 on both.', 10, False, '#5A6472')]])
     r.put(P_ENABLE, v)
     for pid in PAGE_ORDER:
         fonts(r, pid)
