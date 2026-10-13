@@ -859,16 +859,15 @@ def build_allocation(r: Report):
     for i, (name, m, label, color) in enumerate(cards):
         card(r, P_ALLOC, name, (16 + i * 316, 76, 300, 88), m, label, color, '24D')
 
-    slicers = [('v_slc_win', 'Idle after (days without Copilot)', True),
-               ('v_slc_sig', 'Readiness focus (right table)', True),
+    slicers = [('v_slc_win', 'Idle after (days)', True),
+               ('v_slc_sig', 'Readiness focus', True),
                ('v_slc_dept', 'Department', False),
                ('v_slc_country', 'Country', False)]
-    for i, (vid, title, single) in enumerate(slicers):
+    for vid, title, single in slicers:
         v = r.get(P_ALLOC, vid)
         if vid == 'v_slc_sig':
             set_query(v, {'Values': [proj('Readiness Focus', 'Focus', 'Column')]})
         dropdown(v, title, single)
-        v['position'].update(x=16 + i * 316, y=176, width=300, height=64)
         r.put(P_ALLOC, v)
 
     v = r.get(P_ALLOC, 'v_tbl_reclaim')
@@ -958,20 +957,167 @@ def build_dr(r: Report):
     r.put(P_DR, s)
 
 
-def rename(r: Report, page: str, title_vid: str, name: str):
+CONTENT_W = 1040          # content area: x 16 .. 1056
+RAIL = (1072, 64, 208, 656)  # right filter rail: x 1072 .. 1280, below the header
+RAIL_X, RAIL_W = 1080, 192
+
+
+def place(r: Report, page: str, vid: str, x: int, y: int, w: int, h: int, z: int | None = None):
+    v = r.get(page, vid)
+    v['position'].update(x=x, y=y, width=w, height=h)
+    if z is not None:
+        v['position']['z'] = z
+    r.put(page, v)
+    return v
+
+
+def slicer_title(v: dict, title: str):
+    v['visual'].setdefault('objects', {}).setdefault('header', [{'properties': {}}])[0]['properties']['show'] = lit('false')
+    set_title(v, title)
+    t = v['visual']['visualContainerObjects']['title'][0]['properties']
+    t['fontSize'] = lit('11D')
+    t['titleWrap'] = lit('false')
+
+
+def rail(r: Report, page: str, items, notes=()):
+    """items: (vid, height, title or None). notes: (vid, height) textboxes stacked below the slicers."""
+    bg = r.clone(P_DR, 'dr_header_background', page, 'rail_bg', RAIL)
+    bg['position']['z'] = 0
+    fill = bg['visual']['objects']['fill'][0]['properties']
+    fill['fillColor'] = {'solid': {'color': lit("'#F3F4F8'")}}
+    bg['visual']['objects']['line'][0]['properties']['roundEdge'] = lit('0L')
+    r.put(page, bg)
+    lbl = r.clone(P_DR, 'dr_title', page, 'rail_label', (RAIL_X, 72, RAIL_W, 28))
+    lbl['position']['z'] = 50000
+    set_text(lbl, [[('Filters', 12, True, '#32205F')]])
+    r.put(page, lbl)
+    y = 104
+    for i, (vid, h, title) in enumerate(items):
+        v = r.get(page, vid)
+        if title:
+            slicer_title(v, title)
+        v['position'].update(x=RAIL_X, y=y, width=RAIL_W, height=h, z=50001 + i)
+        r.put(page, v)
+        y += h + 12
+    for i, (vid, h) in enumerate(notes):
+        place(r, page, vid, RAIL_X - 4, y, RAIL_W + 8, h, 50100 + i)
+        y += h + 8
+    if y > 720:
+        sys.exit(f'{page}: rail overflows ({y})')
+
+
+def rehead(r: Report, page: str, name: str, title: str, sub: str, old):
     p = r.page(page)
     p['displayName'] = name
     r.put_page(page, p)
-    v = r.get(page, title_vid)
-    retext(v, name)
-    r.put(page, v)
+    for vid in old:
+        r.drop(f'{PAGES}{page}/visuals/{vid}/')
+    header(r, page, title, sub)
 
 
-TITLES = {P_ALLOC: 'hdr_title', P_ENABLE: 'd95a03997924d476c805', P_TRENDS: '536bc5bf159dab30065e',
-          P_ACTIVITY: '0c5207fd21033081c888', P_GLOSSARY: 'c08b3bf77c9303ce33e0', P_DR: 'dr_title',
-          P_OVERVIEW: 'hdr_title', P_BENEFIT: 'hdr_title'}
-SUBTITLES = {P_ALLOC: 'hdr_subtitle', P_ENABLE: '50e580404b0541a2b049', P_GLOSSARY: 'ba4c6965487c8709910d',
-             P_DR: 'dr_subtitle'}
+def tiles_width(v: dict, columns: int, width: int):
+    v['visual']['objects']['layout'][0]['properties']['fixedWidth'] = lit(f'{(width - 24 - 4 * (columns - 1)) // columns}L')
+
+
+def row(r: Report, page: str, vids, y: int, h: int):
+    w = (CONTENT_W - 16 * (len(vids) - 1)) // len(vids)
+    for i, vid in enumerate(vids):
+        place(r, page, vid, 16 + i * (w + 16), y, w, h)
+
+
+def layout(r: Report):
+    """Common grid: header 0-64, content x 16-1056, filters on the right rail. Runs after every builder."""
+    # Overview: add Department / Country filters so every page has the same rail.
+    for name, prop, title in (('ov_dept', 'department', 'Department'), ('ov_country', 'country', 'Country')):
+        v = r.clone(P_DR, 'dr_country', P_OVERVIEW, name, RAIL)
+        set_query(v, {'Values': [proj('EntraUsers', prop, 'Column')]})
+        dropdown(v, title, False)
+        r.put(P_OVERVIEW, v)
+    row(r, P_OVERVIEW, ['ov_kpi_idle', 'ov_kpi_value', 'ov_kpi_ready', 'ov_kpi_enable'], 76, 96)
+    place(r, P_OVERVIEW, 'ov_gate', 16, 184, CONTENT_W, 48)
+    row(r, P_OVERVIEW, ['ov_tier_chart', 'ov_days_chart', 'ov_gap_chart'], 244, 300)
+    place(r, P_OVERVIEW, 'ov_guide', 16, 556, CONTENT_W, 152)
+    rail(r, P_OVERVIEW, [('ov_dept', 64, None), ('ov_country', 64, None)])
+
+    row(r, P_ALLOC, ['al_kpi_total', 'al_kpi_idle', 'al_kpi_value', 'al_kpi_ready'], 76, 88)
+    place(r, P_ALLOC, 'v_tbl_reclaim', 16, 176, 512, 532)
+    place(r, P_ALLOC, 'v_gate', 544, 176, 512, 48)
+    place(r, P_ALLOC, 'v_tbl_assign', 544, 236, 512, 472)
+    rail(r, P_ALLOC, [('v_slc_win', 64, None), ('v_slc_sig', 64, None), ('v_slc_dept', 64, None),
+                      ('v_slc_country', 64, None)])
+
+    v = place(r, P_BENEFIT, 'bs_tabs', 16, 76, CONTENT_W, 64)
+    tiles_width(v, 4, CONTENT_W)
+    r.put(P_BENEFIT, v)
+    row(r, P_BENEFIT, ['bs_kpi_avg', 'bs_kpi_heavy', 'bs_kpi_feature'], 152, 80)
+    place(r, P_BENEFIT, 'bs_dept_chart', 16, 244, 420, 464)
+    place(r, P_BENEFIT, 'bs_user_table', 452, 244, 604, 464)
+    rail(r, P_BENEFIT, [('bs_window', 64, None), ('bs_license', 64, None)])
+
+    row(r, P_DR, ['dr_kpi_coverage', 'dr_kpi_utilization', 'dr_kpi_prompts', 'dr_kpi_champions'], 76, 88)
+    place(r, P_DR, 'dr_gap_chart', 16, 176, 512, 280)
+    place(r, P_DR, 'dr_utilization_chart', 544, 176, 512, 280)
+    place(r, P_DR, 'dr_action_table', 16, 468, CONTENT_W, 240)
+    rail(r, P_DR, [('dr_window', 64, None), ('dr_country', 64, None)])
+
+    rehead(r, P_ENABLE, 'Copilot Enablement', 'Copilot Enablement',
+           'Who to coach first: users highly active in M365 but not yet using Copilot are the fastest wins',
+           ['99492328a3342d8095c6', '62c1fa03604e62d46271', 'd95a03997924d476c805', '50e580404b0541a2b049'])
+    for i, (vid, acc) in enumerate((('66e47f8eeb0a6b19b951', 'bbb1177221e0d4e649ac'),
+                                    ('5068f2770702ba1692c6', 'ade6c27f56607075fb7a'),
+                                    ('5d0a5a00918a0619d898', '368c7699f5c1cfdbcf6a'))):
+        place(r, P_ENABLE, vid, 16 + i * 176, 76, 160, 88)
+        place(r, P_ENABLE, acc, 16 + i * 176, 86, 5, 68)
+    place(r, P_ENABLE, 'ab635314ed27010ac21c', 544, 76, 512, 88)
+    v = place(r, P_ENABLE, '71bd7ac1d2ae2b75ae20', 16, 176, CONTENT_W, 64)
+    tiles_width(v, 7, CONTENT_W)
+    r.put(P_ENABLE, v)
+    place(r, P_ENABLE, '637d7412d0d864bc8e7a', 16, 248, CONTENT_W, 40)
+    place(r, P_ENABLE, 'ec5a5a9cc6ea4abd78ec', 16, 296, CONTENT_W, 360)
+    place(r, P_ENABLE, 'b416d2b1a41ed8aaeed4', 16, 664, CONTENT_W, 44)
+    rail(r, P_ENABLE, [('037fb402726b64a08631', 96, 'Date range'), ('3c8327393b91c75ed514', 64, 'Department'),
+                       ('0cb63db0d537d3080a65', 64, 'Copilot licence')])
+
+    rehead(r, P_TRENDS, 'Appendix: M365 Usage Trends', 'Appendix: M365 Usage Trends',
+           'How M365 activity is trending over time, by app, department and user tier',
+           ['1b173740c37edc10a4e9', '536bc5bf159dab30065e', 'ae4e71e23e8050accd66'])
+    row(r, P_TRENDS, ['1753e5512034d13da0bc', '53ea7fa3515cc6b0a751'], 76, 96)
+    for vid, y, h in (('86c42e6d4758094518e7', 184, 224), ('9cddb62458adc8558dac', 424, 176), ('634bfaaecc3374de60e1', 616, 92)):
+        place(r, P_TRENDS, vid, 16, y, 400, h)
+    for vid, y, h in (('67927ef6d22309570837', 184, 224), ('cb152b3ea00508b03020', 424, 176), ('2ecc8517ce9b098c01d0', 616, 92)):
+        place(r, P_TRENDS, vid, 432, y, 624, h)
+    rail(r, P_TRENDS, [('6104e40e443301c50e28', 96, 'Date range'), ('e565ba805990017717cb', 64, 'Department')])
+
+    rehead(r, P_ACTIVITY, 'Appendix: M365 Usage Activity', 'Appendix: M365 Usage Activity',
+           'Daily M365 activity by app, department and engagement segment',
+           ['0c5207fd21033081c888', '182fea192060009ba80b', '0f170697c50e02546ba4', 'c6cebbd00b680295410a'])
+    place(r, P_ACTIVITY, '1fd864ce16a57870a0a6', 1220, 12, 44, 40, 60000)
+    place(r, P_ACTIVITY, 'aace200f9d5b7073d905', 16, 76, CONTENT_W, 88)
+    place(r, P_ACTIVITY, 'ed8d3ab63d553c826c8c', 16, 176, 512, 224)
+    place(r, P_ACTIVITY, '318b280fe47732b789d0', 16, 412, 512, 296)
+    place(r, P_ACTIVITY, 'f6aa40b68260cd3837d4', 544, 176, 512, 224)
+    place(r, P_ACTIVITY, 'bc1024f0092583955bb5', 544, 412, 512, 140)
+    place(r, P_ACTIVITY, 'cdc94c7eab8be764099c', 544, 564, 512, 144)
+    rail(r, P_ACTIVITY, [('2c92acc95bc4bb338342', 96, 'Date range'), ('0db8aa47945576a60804', 64, 'Department'),
+                         ('ec463aefb34ed742e3b9', 64, 'App')],
+         [('6d94a0a6555251c2d88a', 200), ('42b59526b0913c2d8e01', 128)])
+
+    rehead(r, P_GLOSSARY, r.page(P_GLOSSARY)['displayName'], 'Metric Glossary',
+           'Definitions, calculations and data sources for every metric. Filter by page on the right.',
+           ['97814b0652b0b3a246b6', 'c08b3bf77c9303ce33e0', 'ba4c6965487c8709910d'])
+    v = r.get(P_GLOSSARY, '9b240c2cb128bd2d4088')
+    for para in v['visual']['objects']['general'][0]['properties']['paragraphs']:
+        for run in para.get('textRuns', []):
+            run['value'] = run.get('value', '').replace('page filter above', 'page filter in the right rail')
+    r.put(P_GLOSSARY, v)
+    place(r, P_GLOSSARY, 'glossary_table_001', 16, 76, CONTENT_W, 632)
+    rail(r, P_GLOSSARY, [('glossary_slicer_page', 260, 'Filter by page')], [('9b240c2cb128bd2d4088', 320)])
+
+
+TITLES = {pid: 'hdr_title' for pid in (P_ALLOC, P_ENABLE, P_TRENDS, P_ACTIVITY, P_GLOSSARY, P_OVERVIEW, P_BENEFIT)}
+TITLES[P_DR] = 'dr_title'
+SUBTITLES = {pid: 'hdr_subtitle' for pid in TITLES}
+SUBTITLES[P_DR] = 'dr_subtitle'
 
 
 def bump(v: dict, minimum: int):
@@ -1003,16 +1149,12 @@ def fonts(r: Report, page: str):
                     st = run.setdefault('textStyle', {})
                     cur = float(str(st.get('fontSize', '10pt')).rstrip('pt') or 10)
                     st['fontSize'] = f'{size}pt' if size else f'{max(cur, 10):g}pt'
-            if size == 20 and page not in (P_DR, P_OVERVIEW, P_BENEFIT, P_ALLOC):
-                v['position']['height'] = max(v['position']['height'], 40)
-            if size == 12 and page != P_DR:
-                v['position']['height'] = max(v['position']['height'], 24)
-            if size == 12 and page == P_DR:
+            if size == 12:
                 v['position'].update(y=40, height=22)
                 for para in v['visual']['objects']['general'][0]['properties']['paragraphs']:
                     for run in para.get('textRuns', []):
                         run['textStyle']['fontSize'] = '11pt'
-            if size == 20 and page == P_DR:
+            if size == 20:
                 v['position'].update(y=2, height=40)
         else:
             bump(v, 11 if vt in ('tableEx', 'pivotTable') else 10)
@@ -1041,13 +1183,7 @@ def build_report(r: Report):
     build_overview(r)
     build_benefit(r)
     build_dr(r)
-    rename(r, P_TRENDS, TITLES[P_TRENDS], 'Appendix: M365 Usage Trends')
-    rename(r, P_ACTIVITY, TITLES[P_ACTIVITY], 'Appendix: M365 Usage Activity')
-    rename(r, P_ENABLE, TITLES[P_ENABLE], 'Copilot Enablement')
-    v = r.get(P_ENABLE, SUBTITLES[P_ENABLE])
-    retext(v, 'Who to coach first: users highly active in M365 but not yet using Copilot are the fastest wins')
-    v['position'].update(width=1000)
-    r.put(P_ENABLE, v)
+    layout(r)
     v = r.get(P_ENABLE, 'b416d2b1a41ed8aaeed4')
     set_text(v, [[('Quadrant guide   ', 11, True, '#1B1F27'),
                   ('Targets (high M365, low Copilot): train   |   Champions (high both): advocate   |   '
