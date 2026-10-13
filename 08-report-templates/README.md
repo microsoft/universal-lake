@@ -21,11 +21,11 @@ You need Power BI Desktop and read access to the workspace.
 
 ## M365 Usage Analytics
 
-The [M365 Usage Analytics](https://github.com/microsoft/M365UsageAnalytics) template shows Teams, Outlook, Word, Excel and PowerPoint use per person, with activity tiers and Copilot licensing priorities. Turn on `m365Usage` in `config.json` (step 3) and its permissions (step 2). The `m365_usage` step writes two daily tables: `m365_usage_rollup` (one row per user, day, operation, app and file type) and `m365_usage_sessionstats` (Copilot sessions and prompts per user, day and app).
+The [M365 Usage Analytics](https://github.com/microsoft/M365UsageAnalytics) template shows Teams, Outlook, Word, Excel and PowerPoint use per person, with activity tiers and Copilot licensing priorities. Turn on `m365Usage` in `config.json` (step 3) and its permissions (step 2). The `m365_usage` step writes `m365_usage_rollup` (one row per user, day, operation, app and file type, without AI interactions) and one row per audit record to `connected_ai_app_interactions` and `ai_app_interactions`. It doesn't fetch `CopilotInteraction`: the template reads Copilot interactions from `Copilot_Interactions_Parsed`, which the `audit` step already writes, so the audit log is pulled once.
 
-`M365 Usage Analytics - Fabric.pbit` asks for the same **Fabric SQL Endpoint** and **Lakehouse Name** as ValueLens. It reads the two tables, and builds its per-user stats (tiers, percentiles, ranks), session cohorts and Entra user list with SQL queries that run on the SQL endpoint at each refresh. The queries are in [`m365-usage-sql`](m365-usage-sql); the user list comes from `copilot_org_data` and `copilot_licensed_users`, so turn on `orgData` too.
+`M365 Usage Analytics - Fabric.pbit` asks for the same **Fabric SQL Endpoint** and **Lakehouse Name** as ValueLens. It rebuilds the full rollup (AI interactions included), the Copilot session stats, per-user stats (tiers, percentiles, ranks), session cohorts and Entra user list with SQL queries that run on the SQL endpoint at each refresh. Copilot interactions derived from the parsed table count one response per prompt and one event per prompt or referenced resource (at least 1, at most 1,000). The queries are in [`m365-usage-sql`](m365-usage-sql); the user list comes from `copilot_org_data` and `copilot_licensed_users`, so turn on `orgData` too.
 
-On the first refresh Power BI asks you to approve each native database query. Select **Run** for all three.
+On the first refresh Power BI asks you to approve each native database query. Select **Run** for each.
 
 To change a query, edit `scripts/gen_m365_usage_sql.py`, then run `python scripts/gen_m365_usage_sql.py` and `python scripts/patch_m365_pbit.py`. `scripts/test_m365_usage_sql.py` checks the queries against the original M365 Usage Analytics processor.
 

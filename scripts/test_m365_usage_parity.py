@@ -76,7 +76,7 @@ USERS = ['Alice@Contoso.com', 'bob@contoso.com', ' carol@contoso.com ', '1111111
 DATES = ['2025-03-04T10:11:12Z', '2025-03-04T10:11:12.1234567Z', '2025-03-04T10:11:12.5Z', '2025-03-04T10:11:12',
          '3/4/2025 10:11:12 AM', '3/4/2025 1:02:03 PM', '03/04/2025 13:02:03', '2025-03-04', '3/4/2025',
          'garbage', '', None]
-OPS = gen.OPERATIONS + ['', 'None', 'SomethingElse']
+OPS = gen.OPERATIONS + ['CopilotInteraction', '', 'None', 'SomethingElse']
 WORKLOADS = ['SharePoint', 'OneDrive', 'Exchange', 'MicrosoftTeams', 'Copilot', ' Copilot ', 'null', None]
 EXTS = ['DOCX', 'xlsx', 'pptx', 'pdf', '', None, ' Docx ']
 APPHOSTS = ['Word', 'Teams', 'Agent', 'copilotstudio', 'DeclarativeAgent', 'BizChat', '', None]

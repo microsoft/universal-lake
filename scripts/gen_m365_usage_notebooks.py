@@ -2,7 +2,9 @@
 
     python scripts/gen_m365_usage_notebooks.py
 
-Writes notebooks/M365_Usage_Audit_Ingester.ipynb: Graph audit log -> dbo.m365_usage_rollup + dbo.m365_usage_sessionstats.
+Writes notebooks/M365_Usage_Audit_Ingester.ipynb: Graph audit log -> dbo.m365_usage_rollup,
+dbo.connected_ai_app_interactions and dbo.ai_app_interactions. CopilotInteraction is not fetched here: the template
+reads it from dbo.Copilot_Interactions_Parsed, which Copilot_Audit_Log_Direct_Ingester already writes.
 
 The notebook reuses the fetch, retry and staging cells of notebooks/Copilot_Audit_Log_Direct_Ingester.ipynb
 unchanged, so fixes there are picked up by running this script again. Records are staged as raw JSON and parsed
@@ -28,7 +30,7 @@ OPERATIONS = [
     'MessageSent', 'MessageRead', 'MessagesListed', 'ChatRetrieved', 'ChatCreated',
     'MeetingParticipantJoined', 'MeetingStarted', 'MeetingEnded', 'MeetingParticipantDetail', 'MeetingDetail',
     'TeamsSessionStarted',
-    'CopilotInteraction', 'ConnectedAIAppInteraction', 'AIAppInteraction',
+    'ConnectedAIAppInteraction', 'AIAppInteraction',
 ]
 
 
@@ -80,15 +82,19 @@ INGEST_TITLE = '''
 # Microsoft 365 Usage — Audit Ingester (Fabric)
 
 Calls the Microsoft Graph audit log for the Microsoft 365 activity the **M365 Usage Analytics** template reads
-(file, mail, Teams, meeting and Copilot operations, including **MailItemsAccessed** item counts) and rolls each
-user's day up with the same rules as the template's own processor. All parsing runs in Spark.
+(file, mail, Teams and meeting operations, including **MailItemsAccessed** item counts, plus AI-app interactions) and
+rolls each user's day up with the same rules as the template's own processor. All parsing runs in Spark.
+
+`CopilotInteraction` is **not** fetched here: `Copilot_Audit_Log_Direct_Ingester` already writes it to
+`dbo.Copilot_Interactions_Parsed`, and the template reads it from there.
 
 **Output**
-- `dbo.m365_usage_rollup` — one row per user, day, operation, workload, file type, app and agent (the template's *Rollup* file)
-- `dbo.m365_usage_sessionstats` — Copilot sessions and prompts per user, day and app (the template's *Session Stats* file)
+- `dbo.m365_usage_rollup` — one row per user, day, operation, workload, file type, app and agent (the template's *Rollup* file, without AI operations)
+- `dbo.connected_ai_app_interactions` — one row per `ConnectedAIAppInteraction` audit record
+- `dbo.ai_app_interactions` — one row per `AIAppInteraction` audit record
 
-The template computes its per-user statistics, session cohorts and user directory from these tables plus
-`copilot_org_data` and `copilot_licensed_users`, using T-SQL on the SQL analytics endpoint.
+The template combines these with `Copilot_Interactions_Parsed`, `copilot_org_data` and `copilot_licensed_users` and
+computes its rollup, session stats, per-user statistics, cohorts and user directory with T-SQL on the SQL analytics endpoint.
 
 **Volume**: `MailItemsAccessed` is the largest operation by far on most tenants. Only rolled-up counts are kept, but the
 fetch still reads every record, so start with a short backfill on a large tenant.
@@ -119,8 +125,8 @@ PARSE_MD = '''
 
 Each audit record is parsed with Spark built-in functions — no Python UDFs — following the M365 Usage Analytics
 processor (v2.6.1): non-human identities are dropped, operations are canonicalised (`FileViewed` → `FileAccessed`,
-`MeetingParticipantJoined` → `MeetingParticipantDetail`, `ConnectedAIAppInteraction` → `AIAppInteraction`), each
-Copilot record counts as its exploded row count (largest Copilot array, capped at 1,000), and each `MailItemsAccessed`
+`MeetingParticipantJoined` → `MeetingParticipantDetail`, `ConnectedAIAppInteraction` → `AIAppInteraction`; the original
+name is kept in `SourceOperation`), each AI-app record counts as its exploded row count (largest Copilot array, capped at 1,000), and each `MailItemsAccessed`
 event counts the folder items it touched.
 '''
 
@@ -132,8 +138,8 @@ from pyspark.sql.types import ArrayType, BooleanType, StringType, StructField, S
 ROLLUP_HEADER = ['UserId', 'CreationDate', 'Operation', 'Workload', 'SourceFileExtension', 'AppHost',
                  'EventCount', 'ItemsAccessedCount', 'CreationTime', 'MaxCreationTime',
                  'AgentId', 'AgentName', 'ContextType', 'IsAgentInteraction']
-SESSIONSTATS_HEADER = ['UserId', 'CreationDate', 'AppHost', 'SessionCount', 'PromptCount',
-                       'AgentPromptCount', 'ResponseCount', 'AgentSessionCount']
+AI_APP_HEADER = ['Id', 'UserId', 'CreationDate', 'CreationTime', 'Operation', 'Workload', 'AppHost', 'AgentId',
+                 'AgentName', 'ContextType', 'ThreadId', 'PromptCount', 'ResponseCount', 'EventCount', 'IsAgent']
 
 OP_RENAME = {'FileViewed': 'FileAccessed', 'MeetingParticipantJoined': 'MeetingParticipantDetail',
              'ConnectedAIAppInteraction': 'AIAppInteraction'}
@@ -219,6 +225,7 @@ def parse_audit(raw: DataFrame) -> DataFrame:
     rename = F.create_map(*[F.lit(x) for kv in OP_RENAME.items() for x in kv])
     df = (df.withColumn('UserId', _norm(_first(a['UserId'], F.col('userPrincipalName'), F.col('userId'))))
             .where(_is_human_upn(F.col('UserId')))
+            .withColumn('SourceOperation', op)
             .withColumn('Operation', F.coalesce(F.element_at(rename, op), op)))
     ctx_items = F.coalesce(F.array_max(F.transform(c['Contexts'], lambda x: _size(x['Items']))), F.lit(0))
     copilot_rows = F.greatest(
@@ -246,7 +253,7 @@ def parse_audit(raw: DataFrame) -> DataFrame:
             .withColumn('ThreadId', F.when(hc, _norm(c['ThreadId'])).otherwise(''))
             .withColumn('PromptCount', F.when(hc, _size(F.filter(c['Messages'], lambda m: m['isPrompt']))).otherwise(0).cast('long'))
             .withColumn('ResponseCount', F.when(hc, _size(F.filter(c['Messages'], lambda m: ~m['isPrompt']))).otherwise(0).cast('long')))
-    return df.select('id', 'UserKey', 'UserId', 'CreationDate', 'Operation', 'Workload', 'SourceFileExtension', 'AppHost',
+    return df.select('id', 'UserKey', 'UserId', 'CreationDate', 'SourceOperation', 'Operation', 'Workload', 'SourceFileExtension', 'AppHost',
                      'AgentId', 'AgentName', 'ContextType', 'CreationTime', 'EventCount', 'ItemsAccessedCount',
                      'IsAgent', 'HasCopilotData', 'ThreadId', 'PromptCount', 'ResponseCount')
 '''
@@ -272,14 +279,15 @@ AGG_MD = '''
 ## 8. Roll up per user and day
 
 Same grouping as the processor's `run_rollup`: the *Rollup* key is user, day, operation, workload, file extension, app host,
-agent and context type; *Session Stats* counts distinct Copilot threads with at least one prompt per user, day and app host.
+agent and context type. AI-app interactions are kept one row per audit record in their own tables; the template rolls them
+up together with `Copilot_Interactions_Parsed` and derives *Session Stats* from them.
 '''
 
 AGG_CELL = '''
 _GROUP = ['UserKey', 'CreationDate', 'Operation', 'Workload', 'SourceFileExtension', 'AppHost',
           'AgentId', 'AgentName', 'ContextType']
 _ct = F.when(F.col('CreationTime') != '', F.col('CreationTime'))
-rollup = (recs.groupBy(*_GROUP).agg(
+rollup = (recs.where(~F.col('Operation').isin('CopilotInteraction', 'AIAppInteraction')).groupBy(*_GROUP).agg(
             F.min('UserId').alias('UserId'),
             F.sum('EventCount').alias('EventCount'),
             F.sum('ItemsAccessedCount').alias('ItemsAccessedCount'),
@@ -289,23 +297,21 @@ rollup = (recs.groupBy(*_GROUP).agg(
           .withColumn('IsAgentInteraction', F.when(F.col('_agent') == 1, 'TRUE').otherwise('FALSE'))
           .select(*ROLLUP_HEADER))
 
-_session = (F.col('ThreadId') != '') & (F.col('PromptCount') > 0)
-sessionstats = (recs.where('HasCopilotData')
-    .groupBy('UserKey', 'CreationDate', 'AppHost').agg(
-        F.min('UserId').alias('UserId'),
-        F.countDistinct(F.when(_session, F.col('ThreadId'))).alias('SessionCount'),
-        F.sum('PromptCount').alias('PromptCount'),
-        F.sum(F.when(F.col('IsAgent'), F.col('PromptCount')).otherwise(0)).alias('AgentPromptCount'),
-        F.sum('ResponseCount').alias('ResponseCount'),
-        F.countDistinct(F.when(_session & F.col('IsAgent'), F.col('ThreadId'))).alias('AgentSessionCount'))
-    .where(~((F.col('SessionCount') == 0) & (F.col('PromptCount') == 0)))
-    .select(*SESSIONSTATS_HEADER))
+def ai_app_records(source_operation):
+    return (recs.where(F.col('SourceOperation') == source_operation)
+            .withColumn('Id', F.col('id'))
+            .withColumn('Operation', F.col('SourceOperation'))
+            .withColumn('IsAgent', F.when(F.col('IsAgent'), 'TRUE').otherwise('FALSE'))
+            .select(*AI_APP_HEADER))
+
+connected_ai = ai_app_records('ConnectedAIAppInteraction')
+ai_app = ai_app_records('AIAppInteraction')
 '''
 
 WRITE_MD = '''
 ## 9. Write to Lakehouse Delta tables
 
-Backfill overwrites both tables. Incremental re-reads whole days from `REPLACE_FROM`, so it deletes those days and appends the fresh rollup — re-running is safe.
+Backfill overwrites all three tables. Incremental re-reads whole days from `REPLACE_FROM`, so it deletes those days and appends the fresh rollup — re-running is safe.
 '''
 
 WRITE_CELL = '''
@@ -318,7 +324,7 @@ def write_days(df, table):
     df.write.format('delta').mode('overwrite').option('overwriteSchema', 'true').saveAsTable(table)
     return 'overwrite'
 
-for _df, _table in ((rollup, OUTPUT_TABLE), (sessionstats, SESSION_TABLE)):
+for _df, _table in ((rollup, OUTPUT_TABLE), (connected_ai, CONNECTED_AI_TABLE), (ai_app, AI_APP_TABLE)):
     _how = write_days(_df, _table)
     print(f'✓ {_table}: {spark.table(_table).count():,} rows ({_how})')
 recs.unpersist()
@@ -350,7 +356,8 @@ def build_ingester(base: dict) -> list[dict]:
     ops = ',\n'.join(f'    {op!r}' for op in OPERATIONS)
     cfg = patch(c[2], "OUTPUT_TABLE  = 'dbo.Copilot_Interactions_Parsed'     # Delta table consumed by the PBIT (keep name/schema stable)",
                 "OUTPUT_TABLE  = 'dbo.m365_usage_rollup'              # template 'Rollup' input\n"
-                "SESSION_TABLE = 'dbo.m365_usage_sessionstats'        # template 'Session Stats' input\n"
+                "CONNECTED_AI_TABLE = 'dbo.connected_ai_app_interactions'  # ConnectedAIAppInteraction records\n"
+                "AI_APP_TABLE  = 'dbo.ai_app_interactions'           # AIAppInteraction records\n"
                 f"OPERATIONS    = [                                    # audit operations the template reads\n{ops},\n]")
     cfg = patch(cfg, "# 'incremental' = requery the trailing LOOKBACK_DAYS (for late arrivals) and merge by stable Id.",
                 "# 'incremental' = requery whole days from the trailing LOOKBACK_DAYS (late arrivals) and replace them.")
