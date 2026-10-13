@@ -1031,6 +1031,28 @@ def row(r: Report, page: str, vids, y: int, h: int):
         place(r, page, vid, 16 + i * (w + 16), y, w, h)
 
 
+def compact(r: Report, page: str, vid: str, cols: dict):
+    """Denser table: 10pt text, tight rows, wrapped headers. cols: queryRef -> (width px, header label or None)."""
+    v = r.get(page, vid)
+    o = v['visual']['objects']
+    for k in ('values', 'columnHeaders', 'rowHeaders'):
+        if k in o:
+            o[k][0]['properties']['fontSize'] = lit('10D')
+    o['columnHeaders'][0]['properties']['wordWrap'] = lit('true')
+    o.setdefault('grid', [{'properties': {}}])[0]['properties']['rowPadding'] = lit('2D')
+    if cols:
+        refs = {p['queryRef']: p for ps in v['visual']['query']['queryState'].values() for p in ps['projections']}
+        missing = set(cols) - set(refs)
+        if missing:
+            sys.exit(f'{vid}: no column {missing}')
+        o['columnWidth'] = [{'properties': {'value': lit(f'{w}D')}, 'selector': {'metadata': ref}}
+                            for ref, (w, _) in cols.items()]
+        for ref, (_, label) in cols.items():
+            if label:
+                refs[ref]['displayName'] = label
+    r.put(page, v)
+
+
 def layout(r: Report):
     """Common grid: header 0-64, content x 16-1056, filters on the right rail. Runs after every builder."""
     # Overview: add Department / Country filters so every page has the same rail.
@@ -1046,9 +1068,18 @@ def layout(r: Report):
     rail(r, P_OVERVIEW, [('ov_dept', DROP_H, None), ('ov_country', DROP_H, None)])
 
     row(r, P_ALLOC, ['al_kpi_total', 'al_kpi_idle', 'al_kpi_value', 'al_kpi_ready'], 76, 88)
-    place(r, P_ALLOC, 'v_tbl_reclaim', 16, 176, 512, 532)
-    place(r, P_ALLOC, 'v_gate', 544, 176, 512, 48)
-    place(r, P_ALLOC, 'v_tbl_assign', 544, 236, 512, 472)
+    r.drop(f'{PAGES}{P_ALLOC}/visuals/v_gate/')
+    place(r, P_ALLOC, 'v_tbl_reclaim', 16, 176, 432, 532)
+    compact(r, P_ALLOC, 'v_tbl_reclaim', {
+        'EntraUsers.displayName': (100, None), 'EntraUsers.department': (100, None),
+        f'{RT}.LU M365 Days': (52, 'M365 days (30d)'), f'{RT}.LU Copilot Days': (56, 'Copilot days (30d)'),
+        f'{RT}.LU Gap Days': (44, 'Gap (days)'), f'{RT}.LU Last Copilot': (60, 'Last Copilot use')})
+    place(r, P_ALLOC, 'v_tbl_assign', 464, 176, 592, 532)
+    compact(r, P_ALLOC, 'v_tbl_assign', {
+        'EntraUsers.displayName': (96, None), 'EntraUsers.department': (100, None),
+        f'{RT}.RS Score': (40, None), f'{RT}.RS Chat Prompts': (48, 'Chat prompts'),
+        f'{RT}.RS Agent Prompts': (48, 'Agent prompts'), f'{RT}.RS Depth Percentile': (48, 'M365 depth pctl'),
+        f'{RT}.RS Active Days': (40, 'Active days'), f'{RT}.RS Why': (148, None)})
     rail(r, P_ALLOC, [('v_slc_win', DROP_H, None), ('v_slc_sig', DROP_H, None), ('v_slc_dept', DROP_H, None),
                       ('v_slc_country', DROP_H, None)])
 
@@ -1058,12 +1089,20 @@ def layout(r: Report):
     row(r, P_BENEFIT, ['bs_kpi_avg', 'bs_kpi_heavy', 'bs_kpi_feature'], 152, 80)
     place(r, P_BENEFIT, 'bs_dept_chart', 16, 244, 420, 464)
     place(r, P_BENEFIT, 'bs_user_table', 452, 244, 604, 464)
+    compact(r, P_BENEFIT, 'bs_user_table', {
+        'EntraUsers.displayName': (104, None), 'EntraUsers.department': (100, None),
+        f'{RT}.BS Selected Value': (56, None), f'{RT}.BS Selected Avg User': (56, None),
+        f'{RT}.BS Selected vs Avg': (60, None), f'{RT}.BS Top Benefit': (200, 'Best overall Copilot fit')})
     rail(r, P_BENEFIT, [('bs_window', DROP_H, None), ('bs_license', DROP_H, None)])
 
     row(r, P_DR, ['dr_kpi_coverage', 'dr_kpi_utilization', 'dr_kpi_prompts', 'dr_kpi_champions'], 76, 88)
     place(r, P_DR, 'dr_gap_chart', 16, 176, 512, 280)
     place(r, P_DR, 'dr_utilization_chart', 544, 176, 512, 280)
     place(r, P_DR, 'dr_action_table', 16, 468, CONTENT_W, 240)
+    compact(r, P_DR, 'dr_action_table', {
+        'EntraUsers.department': (140, None), 'Department Readiness.DR Department Users': (56, None),
+        f'{RT}.RS Assign Now Count': (72, None), 'Department Readiness.DR Enablement Target Users': (72, None),
+        'Department Readiness.DR Recommended Action': (220, None), f'{RT}.DR Action Why': (440, None)})
     rail(r, P_DR, [('dr_window', DROP_H, None), ('dr_country', DROP_H, None)])
 
     rehead(r, P_ENABLE, 'Copilot Enablement', 'Copilot Enablement',
@@ -1080,6 +1119,7 @@ def layout(r: Report):
     r.put(P_ENABLE, v)
     place(r, P_ENABLE, '637d7412d0d864bc8e7a', 16, 248, CONTENT_W, 40)
     place(r, P_ENABLE, 'ec5a5a9cc6ea4abd78ec', 16, 296, CONTENT_W, 360)
+    compact(r, P_ENABLE, 'ec5a5a9cc6ea4abd78ec', {})
     place(r, P_ENABLE, 'b416d2b1a41ed8aaeed4', 16, 664, CONTENT_W, 44)
     rail(r, P_ENABLE, [('037fb402726b64a08631', DATE_H, 'Date range'), ('3c8327393b91c75ed514', DROP_H, 'Department'),
                        ('0cb63db0d537d3080a65', DROP_H, 'Copilot licence')])
@@ -1171,7 +1211,7 @@ def fonts(r: Report, page: str):
             if size == 20:
                 v['position'].update(y=2, height=40)
         else:
-            bump(v, 11 if vt in ('tableEx', 'pivotTable') else 10)
+            bump(v, 10)
             t = v['visual'].get('visualContainerObjects', {}).get('title')
             if t and vt not in ('card', 'cardVisual', 'slicer', 'advancedSlicerVisual'):
                 fs = t[0]['properties'].get('fontSize')
