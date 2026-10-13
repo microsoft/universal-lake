@@ -117,7 +117,11 @@ _STAGE_FIELDS = ('id', 'createdDateTime', 'operation', 'userPrincipalName', 'use
 def _row(r):
     """Stage only the fields the Spark parser reads (section 6); no per-record parsing here."""
     r = r or {}
-    return {k: r.get(k) for k in _STAGE_FIELDS}
+    row = {k: r.get(k) for k in _STAGE_FIELDS}
+    ad = row.get('auditData')
+    if ad is not None and not isinstance(ad, str):
+        row['auditData'] = json.dumps(ad, ensure_ascii=False, separators=(',', ':'))
+    return row
 '''.strip('\n')
 
 PARSE_MD = '''
@@ -272,7 +276,17 @@ else:
     _raw = spark.createDataFrame([], STAGE_SCHEMA)
 _raw = _raw.withColumn('_key', F.coalesce('id', F.sha2(F.concat_ws('|', 'createdDateTime', 'operation', 'auditData'), 256)))
 recs = parse_audit(_raw.dropDuplicates(['_key'])).persist()
-print(f'Parsed rows: {recs.count():,} (from {len(_files)} active window file(s))')
+_parsed = recs.count()
+print(f'Parsed rows: {_parsed:,} (from {len(_files)} active window file(s))')
+if _parsed == 0 and _files:
+    _d = _raw.agg(F.count(F.lit(1)).alias('raw'),
+                  F.sum(F.col('auditData').isNull().cast('int')).alias('no_auditData'),
+                  F.sum(F.col('operation').isNull().cast('int')).alias('no_operation')).collect()[0]
+    print(f"Staged rows: {_d['raw']:,}; missing auditData: {_d['no_auditData']:,}; missing operation: {_d['no_operation']:,}")
+    if _d['raw'] and _d['no_auditData'] == _d['raw']:
+        raise RuntimeError(
+            f'The staged files under {STAGING_DIR} are not raw Graph audit records (no auditData). They were probably '
+            'written by an older ingester version. Delete that folder and rerun with RUN_MODE backfill.')
 '''
 
 AGG_MD = '''
@@ -362,7 +376,7 @@ def build_ingester(base: dict) -> list[dict]:
     cfg = patch(cfg, "# 'incremental' = requery the trailing LOOKBACK_DAYS (for late arrivals) and merge by stable Id.",
                 "# 'incremental' = requery whole days from the trailing LOOKBACK_DAYS (late arrivals) and replace them.")
     cfg = patch(cfg, "STAGING_DIR             = 'Files/_audit_staging'",
-                "STAGING_DIR             = 'Files/_m365_audit_staging'")
+                "STAGING_DIR             = 'Files/_m365_audit_staging_raw'  # raw Graph records; bump the name if the staged format changes")
     cfg = patch(cfg, "'CopilotAuditAppSecret')", "'M365UsageAppSecret')")
 
     win = patch(c[6], '''    WRITE_MODE = 'merge'
