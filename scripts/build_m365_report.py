@@ -1073,13 +1073,13 @@ def layout(r: Report):
     compact(r, P_ALLOC, 'v_tbl_reclaim', {
         'EntraUsers.displayName': (100, None), 'EntraUsers.department': (100, None),
         f'{RT}.LU M365 Days': (52, 'M365 days (30d)'), f'{RT}.LU Copilot Days': (56, 'Copilot days (30d)'),
-        f'{RT}.LU Gap Days': (44, 'Gap (days)'), f'{RT}.LU Last Copilot': (60, 'Last Copilot use')})
+        f'{RT}.LU Gap Days': (52, 'Gap (days)'), f'{RT}.LU Last Copilot': (60, 'Last Copilot use')})
     place(r, P_ALLOC, 'v_tbl_assign', 464, 176, 592, 532)
     compact(r, P_ALLOC, 'v_tbl_assign', {
-        'EntraUsers.displayName': (96, None), 'EntraUsers.department': (100, None),
-        f'{RT}.RS Score': (40, None), f'{RT}.RS Chat Prompts': (48, 'Chat prompts'),
+        'EntraUsers.displayName': (96, None), 'EntraUsers.department': (88, None),
+        f'{RT}.RS Score': (48, None), f'{RT}.RS Chat Prompts': (48, 'Chat prompts'),
         f'{RT}.RS Agent Prompts': (48, 'Agent prompts'), f'{RT}.RS Depth Percentile': (48, 'M365 depth pctl'),
-        f'{RT}.RS Active Days': (40, 'Active days'), f'{RT}.RS Why': (148, None)})
+        f'{RT}.RS Active Days': (52, 'Active days'), f'{RT}.RS Why': (148, None)})
     rail(r, P_ALLOC, [('v_slc_win', DROP_H, None), ('v_slc_sig', DROP_H, None), ('v_slc_dept', DROP_H, None),
                       ('v_slc_country', DROP_H, None)])
 
