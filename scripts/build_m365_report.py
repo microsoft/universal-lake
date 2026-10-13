@@ -187,6 +187,66 @@ BS_MEASURES = [
      'CALCULATE([BS Meetings Index]) >= 1.5)), 0)', '#,0'),
 ]
 
+# (tab label, total, per user, index, Copilot feature)
+BS_SIGNALS = [('Meetings', 'BS Meetings Attended', 'BS Meetings per User', 'BS Meetings Index', 'Meeting recap & follow-ups'),
+              ('Documents viewed', 'BS Docs Viewed', 'BS Docs Viewed per User', 'BS Docs Viewed Index', 'Summarise long documents'),
+              ('Emails', 'BS Emails', 'BS Emails per User', 'BS Emails Index', 'Email triage & drafting'),
+              ('Documents edited', 'BS Docs Edited', 'BS Docs Edited per User', 'BS Docs Edited Index', 'Draft & rewrite content')]
+
+
+def bs_switch(i: int, quote: bool = False) -> str:
+    val = (lambda s: f'"{s[i]}"') if quote else (lambda s: f'[{s[i]}]')
+    return ('SWITCH([BS Selected Signal], ' + ', '.join(f'"{s[0]}", {val(s)}' for s in BS_SIGNALS[:-1])
+            + f', {val(BS_SIGNALS[-1])})')
+
+
+PCT_DIFF = '+0%;-0%;0%'
+BS_SELECTED = [
+    ('BS Selected Signal', 'SELECTEDVALUE(\'Benefit Signal\'[Signal], "Meetings")', None),
+    ('BS Selected Value', bs_switch(1), '#,0'),
+    ('BS Selected per User', bs_switch(2), '#,0.0'),
+    ('BS Selected Index', bs_switch(3), '0.0x'),
+    ('BS Selected Avg User', 'CALCULATE([BS Selected per User], ALLSELECTED(EntraUsers))', '#,0.0'),
+    ('BS Selected vs Avg', 'VAR I = [BS Selected Index] RETURN IF(NOT ISBLANK(I), I - 1)', PCT_DIFF),
+    ('BS Above Avg', 'VAR D = [BS Selected vs Avg] RETURN IF(D >= 0, D)', PCT_DIFF),
+    ('BS Below Avg', 'VAR D = [BS Selected vs Avg] RETURN IF(D < 0, D)', PCT_DIFF),
+    ('BS Selected Feature', bs_switch(4, True), None),
+    ('BS Selected Heavy Users', 'COALESCE(COUNTROWS(FILTER(VALUES(EntraUsers[userPrincipalName]), '
+     'CALCULATE([BS Selected Index]) >= 1.5)), 0)', '#,0'),
+    ('BS Chart Title', '[BS Selected Signal] & ": departments above or below the average user"', None),
+    ('BS Table Title', '[BS Selected Signal] & ": users furthest above the average user"', None),
+]
+
+LU_MEASURES = [
+    ('LU M365 Days', in_window('30') +
+     f'COALESCE(CALCULATE(DISTINCTCOUNT(M365Usage[CreationDate]), {window_filters()}), 0)', '0'),
+    ('LU Copilot Days', 'VAR Ref = CALCULATE(MAX(M365CopilotSessions[CreationDate]), ALL(M365CopilotSessions), '
+     'REMOVEFILTERS(EntraUsers))\nRETURN COALESCE(CALCULATE(DISTINCTCOUNT(M365CopilotSessions[CreationDate]), '
+     'VALUE(M365CopilotSessions[PromptCount]) > 0, FILTER(ALL(M365CopilotSessions[CreationDate]), '
+     'M365CopilotSessions[CreationDate] > Ref - 30 && M365CopilotSessions[CreationDate] <= Ref)), 0)', '0'),
+    ('LU Gap Days', 'MAX(0, [LU M365 Days] - [LU Copilot Days])', '0'),
+    ('LU Last Copilot', 'VAR D = [OPT Days Since Last Copilot]\nRETURN IF(ISBLANK(D), "Never", '
+     'IF(D = 0, "Today", D & IF(D = 1, " day ago", " days ago")))', None),
+]
+
+DR_WHY = '''VAR M = [DR Average M365 Percentile]
+VAR Gap = [DR Readiness Gap]
+VAR Cov = [DR License Coverage]
+VAR Util = [DR Licensed Utilization]
+VAR Rate = [DR Enablement Target Rate]
+VAR GapTxt = "M365 rank " & FORMAT(ABS(Gap), "0") & " pts " & IF(Gap >= 0, "ahead of", "behind") & " Copilot"
+RETURN
+SWITCH(
+    TRUE(),
+    ISBLANK(M), BLANK(),
+    M < 40, "Light M365 activity (avg rank " & FORMAT(M, "0") & "), so little for Copilot to build on",
+    Util < 0.50 && Cov >= 0.50, FORMAT(Cov, "0%") & " licensed but only " & FORMAT(Util, "0%") & " of them use Copilot",
+    Gap >= 15 && Cov < 0.75, GapTxt & ", and only " & FORMAT(Cov, "0%") & " licensed",
+    Gap >= 15, GapTxt,
+    Rate >= 0.20, FORMAT(Rate, "0%") & " of users are busy in M365 but light on Copilot",
+    "Copilot use keeps pace with M365 activity"
+)'''
+
 DR_ACTION = '''VAR M365Pct = [DR Average M365 Percentile]
 VAR Gap = [DR Readiness Gap]
 VAR Coverage = [DR License Coverage]
@@ -212,12 +272,16 @@ GLOSSARY = [
         ('Ready to assign', 'Unlicensed users with a Copilot Readiness Score of 70 or more.'),
         ('Users to enable', 'Users in the top half of M365 activity but the bottom half of Copilot use: the fastest enablement wins.'),
         ('Readiness tiers chart', 'Unlicensed users grouped by readiness tier: Assign now (70+), Next wave (50-69), Nurture (30-49), Not yet (<30).'),
+        ('Enablement opportunity chart', 'Every user is ranked 0-100 on M365 activity and on Copilot use. Each bar is the department\'s average M365 rank minus its average Copilot rank, in percentile points. Orange (M365 ahead): people do a lot of M365 work without Copilot, so enable them first. Teal (Copilot ahead): Copilot use is already ahead of M365 activity.'),
     ]),
     ('Copilot License Allocation', [
-        ('About this page', 'One page for both sides of licence allocation: reclaim or enable idle licences on the left, assign the freed licences to the highest-scoring users on the right.'),
-        ('Inactivity window', 'Days without Copilot activity before a licence counts as idle. Also sets the activity window the readiness score uses (30, 60 or full history).'),
+        ('About this page', 'Both sides of licence allocation. Left: licensed users who are busy in M365 but not using Copilot, to coach before reclaiming. Right: unlicensed users who should get a licence next.'),
+        ('Inactivity window', 'Days without Copilot activity before a licence counts as idle (the Idle licences card). Also sets the activity window the readiness score uses (30, 60 or full history).'),
         ('Readiness focus', 'Which M365 behaviour counts as depth: Balanced (all apps), Collaborators (Teams + Outlook), Content creators (Word + PowerPoint) or Analysts (Excel).'),
-        ('Suggested action', 'Enable when the idle user is still active in M365 (activity at least equal to the lookback days); otherwise Reclaim.'),
+        ('M365 days (last 30)', 'Distinct days in the last 30 with any M365 activity.'),
+        ('Copilot days (last 30)', 'Distinct days in the last 30 with at least one Copilot prompt.'),
+        ('Gap (days)', 'M365 days minus Copilot days. The list is ranked by this gap: users at the top work in M365 almost every day but rarely or never use Copilot, so coach them first. Users near the bottom with few M365 days are reclaim candidates.'),
+        ('Last Copilot use', 'Days since the user last sent a Copilot prompt, or Never.'),
         ('Copilot Readiness Score', 'A 0-100 score for unlicensed users = AI weight x Copilot Chat percentile + depth weight x focus percentile + consistency weight x consistency.'),
         ('AI signal gate', 'Share of unlicensed users already using Copilot Chat. 5% or more: weights 40/40/20. 1-5%: 10/65/25. Under 1%: 0/75/25, so tenants new to Copilot are scored on M365 behaviour alone.'),
         ('Copilot Chat / Agent prompts', 'Prompts the user sent to Copilot Chat and to agents in the window. Any use by an unlicensed user is direct evidence of demand; it feeds the Copilot use part of the score.'),
@@ -228,23 +292,26 @@ GLOSSARY = [
         ('Why', 'Plain-language reason for the score: Copilot Chat and agent prompts, M365 depth percentile and active days.'),
     ]),
     ('Copilot Benefit Signals', [
-        ('About this page', 'Shows how much each user would gain from specific Copilot features, using M365 behaviour as a proxy. Useful even when no one uses Copilot yet.'),
+        ('About this page', 'Shows how much each user would gain from specific Copilot features, using M365 behaviour as a proxy. Useful even when no one uses Copilot yet. Pick a signal tab at the top: Meetings, Documents viewed, Emails or Documents edited.'),
         ('Meetings attended', 'Teams MeetingParticipantDetail events in the lookback window. Benefits: meeting recap, notes and follow-ups.'),
         ('Documents viewed', 'FileAccessed, FilePreviewed and FileViewed events. Benefits: summarise long documents.'),
         ('Emails', 'Emails sent (Send) plus mail items read (MailItemsAccessed). Benefits: inbox triage and drafting.'),
         ('Documents edited', 'FileModified events. Benefits: draft and rewrite content.'),
+        ('Average user', 'The selected signal per active user across the current selection.'),
+        ('vs average', 'How far above or below the average user: +150% means 2.5 times the typical load, -40% means 60% of it.'),
+        ('Users 1.5x+ the average', 'Users whose load on the selected signal is at least 50% above the average user.'),
         ('Index', "A user's value divided by the average per active user in the current selection: 2.0x means twice the typical load, 1.0x is average."),
-        ('Top benefit', 'The Copilot feature matching the user\'s highest index, with that multiple, e.g. "Meeting recap (3.2x avg meetings)". Users whose highest index is under 0.5x show Low M365 activity.'),
+        ('Best overall Copilot fit', 'The Copilot feature matching the user\'s highest index across all four signals, with that multiple, e.g. "Meeting recap (3.2x avg meetings)". Users whose highest index is under 0.5x show Low M365 activity.'),
     ]),
     ('Department Readiness', [
-        ('About this page', 'Which departments to prioritise for licences and enablement.'),
-        ('License coverage', 'Licensed users divided by department users.'),
-        ('Licensed utilization', 'Licensed users with Copilot activity divided by licensed users.'),
-        ('Prompts per active user', 'Copilot prompts divided by active Copilot users.'),
-        ('Avg readiness score', 'Average Copilot Readiness Score of unlicensed users in scope.'),
-        ('Readiness gap', 'Average M365 percentile minus average Copilot percentile. A positive gap means M365-heavy users who are not yet using Copilot.'),
-        ('Enablement target rate', 'Share of users with M365 percentile 50+ and Copilot percentile under 50.'),
-        ('Recommended action', 'Build M365 foundations, Enable licensed users, Assign + enable, Target Copilot enablement, Run enablement campaign, or Maintain and monitor.'),
+        ('About this page', 'Which departments to license and enable first. Each row ends with a recommended action and the reason for it.'),
+        ('Licensed (% of users)', 'Licence coverage: users with a Copilot licence divided by all users in the department.'),
+        ('Licensed & using Copilot', 'Licensed utilization: licensed users who sent at least one Copilot prompt in the benchmark window, divided by licensed users.'),
+        ('Enablement gap', 'Every user is ranked 0-100 on M365 activity and on Copilot use. The gap is the department\'s average M365 rank minus its average Copilot rank. +20 means the department is 20 points busier in M365 than in Copilot. Negative means Copilot use is ahead.'),
+        ('Users to enable', 'Users in the top half for M365 activity but the bottom half for Copilot use (M365 rank 50+, Copilot rank under 50).'),
+        ('Ready to assign', 'Unlicensed users with a Copilot Readiness Score of 70 or more.'),
+        ('Recommended action', 'First rule that applies: Build M365 foundations (avg M365 rank under 40), Enable licensed users (50%+ licensed but under 50% use Copilot), Assign + enable (gap 15+ and under 75% licensed), Target Copilot enablement (gap 15+), Run enablement campaign (20%+ users to enable), otherwise Maintain and monitor.'),
+        ('Why', 'The numbers behind the recommended action for that department.'),
     ]),
     ('Enablement', [
         ('About this page', 'Prioritised list of users to coach, grouped by quadrant.'),
@@ -368,14 +435,21 @@ def build_model(model: dict) -> tuple[set, set]:
     for n, e, f, folder in RS_MEASURES:
         rt['measures'].append({'name': n, 'expression': e.split('\n'), **({'formatString': f} if f else {}),
                                'displayFolder': f'Readiness Score\\{folder}', 'lineageTag': tag(n)})
-    for n, e, f in BS_MEASURES:
+    for n, e, f in BS_MEASURES + BS_SELECTED:
         rt['measures'].append({'name': n, 'expression': e.split('\n'), **({'formatString': f} if f else {}),
                                'displayFolder': 'Benefit Signals', 'lineageTag': tag(n)})
+    for n, e, f in LU_MEASURES:
+        rt['measures'].append({'name': n, 'expression': e.split('\n'), **({'formatString': f} if f else {}),
+                               'displayFolder': 'Licence Use', 'lineageTag': tag(n)})
+    rt['measures'].append({'name': 'DR Action Why', 'expression': DR_WHY.split('\n'),
+                           'displayFolder': 'Department', 'lineageTag': tag('DR Action Why')})
     m['tables'] += [rt,
                     calc_table('Readiness Focus', [('Focus', 'STRING'), ('SortOrder', 'INTEGER')],
                                [('Balanced', 1), ('Collaborators', 2), ('Content creators', 3), ('Analysts', 4)]),
                     calc_table('Readiness Tier', [('Tier', 'STRING'), ('SortOrder', 'INTEGER')],
-                               [('Assign now', 1), ('Next wave', 2), ('Nurture', 3), ('Not yet', 4)])]
+                               [('Assign now', 1), ('Next wave', 2), ('Nurture', 3), ('Not yet', 4)]),
+                    calc_table('Benefit Signal', [('Signal', 'STRING'), ('SortOrder', 'INTEGER')],
+                               [(s[0], i + 1) for i, s in enumerate(BS_SIGNALS)])]
 
     gl = next(t for t in m['tables'] if {'Page', 'Metric', 'Description'} <= {c['name'] for c in t['columns']})
     gl['partitions'][0]['source']['expression'] = glossary_expr().split('\n')
@@ -455,6 +529,8 @@ class Report:
         x, y, w, h = pos
         v['position'].update(x=x, y=y, width=w, height=h)
         v.pop('filterConfig', None)
+        for k in ('subTitle', 'visualHeaderTooltip'):
+            v['visual'].get('visualContainerObjects', {}).pop(k, None)
         return v
 
 
@@ -512,6 +588,74 @@ def set_alt(v: dict, text: str):
     g = v['visual'].get('visualContainerObjects', {}).get('general')
     if g:
         g[0]['properties']['altText'] = lit("'" + text.replace("'", "''") + "'")
+
+
+def q(text: str) -> dict:
+    return lit("'" + text.replace("'", "''") + "'")
+
+
+def subtitle(v: dict, text: str):
+    v['visual'].setdefault('visualContainerObjects', {})['subTitle'] = [{'properties': {
+        'show': lit('true'), 'text': q(text), 'fontColor': {'solid': {'color': lit("'#5A6472'")}},
+        'fontFamily': lit("'Segoe UI'"), 'fontSize': lit('10D')}}]
+
+
+def tooltip(v: dict, text: str):
+    vco = v['visual'].setdefault('visualContainerObjects', {})
+    vh = vco.setdefault('visualHeader', [{'properties': {}}])[0]['properties']
+    vh['show'] = lit('true')
+    vh['showTooltipButton'] = lit('true')
+    vco['visualHeaderTooltip'] = [{'properties': {'text': q(text)}}]
+
+
+def dynamic_title(v: dict, measure: str):
+    set_title(v, '')
+    v['visual']['visualContainerObjects']['title'][0]['properties']['text'] = {'expr': field(RT, measure)}
+
+
+def colors(v: dict, mapping: dict):
+    v['visual']['objects']['dataPoint'] = [
+        {'properties': {'fill': {'solid': {'color': lit(f"'{c}'")}}}, 'selector': {'metadata': ref}}
+        for ref, c in mapping.items()]
+
+
+def relabel(v: dict, role: str, prop: str, label: str):
+    for p in v['visual']['query']['queryState'][role]['projections']:
+        if next(iter(p['field'].values()))['Property'] == prop:
+            p['displayName'] = p['nativeQueryRef'] = label
+            return
+    sys.exit(f'{v["name"]}: {prop} not in {role}')
+
+
+def dropdown(v: dict, title: str, single: bool):
+    o = v['visual']['objects']
+    o['data'] = [{'properties': {'mode': lit("'Dropdown'")}}]
+    sel = o.setdefault('selection', [{'properties': {}}])[0]['properties']
+    sel['singleSelect'] = lit('true' if single else 'false')
+    sel['selectAllCheckboxEnabled'] = lit('false')
+    sel['strictSingleSelect'] = lit('false')
+    o.setdefault('header', [{'properties': {}}])[0]['properties']['show'] = lit('false')
+    set_title(v, title)
+    t = v['visual']['visualContainerObjects']['title'][0]['properties']
+    t['fontSize'] = lit('11D')
+    t['titleWrap'] = lit('false')
+
+
+GAP_TIP = ('Every user is ranked 0-100 (a percentile) on M365 activity and on Copilot use. Each bar is the '
+           "department's average M365 rank minus its average Copilot rank. +20 means the department is 20 points "
+           'busier in M365 than in Copilot: lots of M365 work done without Copilot, so the biggest enablement '
+           'opportunity. A negative (teal) bar means Copilot use is already ahead of M365 activity.')
+
+
+def explain_gap(v: dict, title: str):
+    relabel(v, 'Y', 'DR Positive Readiness Gap', 'M365 ahead of Copilot (enable)')
+    relabel(v, 'Y', 'DR Negative Readiness Gap', 'Copilot ahead of M365')
+    relabel(v, 'Tooltips', 'DR Readiness Gap', 'Enablement gap (pts)')
+    v['visual']['objects']['valueAxis'][0]['properties']['titleText'] = q('M365 rank minus Copilot rank (points)')
+    set_title(v, title)
+    subtitle(v, 'Orange: busier in M365 than in Copilot, enable first. Teal: Copilot use already ahead.')
+    tooltip(v, GAP_TIP)
+    set_alt(v, title + '. ' + GAP_TIP)
 
 
 def card(r: Report, page: str, name: str, pos: tuple, measure: tuple, label: str, accent: str, size: str = '22D'):
@@ -590,7 +734,7 @@ def build_overview(r: Report):
     r.put(P_OVERVIEW, days)
 
     gap = r.clone(P_DR, 'dr_gap_chart', P_OVERVIEW, 'ov_gap_chart', (848, 244, 416, 300))
-    set_title(gap, 'Departments with the biggest enablement opportunity')
+    explain_gap(gap, 'Departments with the biggest enablement opportunity')
     r.put(P_OVERVIEW, gap)
 
     guide = r.clone(P_DR, 'dr_title', P_OVERVIEW, 'ov_guide', (16, 556, 1248, 152))
@@ -608,50 +752,65 @@ def build_overview(r: Report):
 def build_benefit(r: Report):
     new_page(r, P_BENEFIT, 'Copilot Benefit Signals')
     header(r, P_BENEFIT, 'Copilot Benefit Signals',
-           'Who gains most from Copilot, and from which feature, based on how they already work in M365')
-    cards = [('bs_kpi_meet', 'BS Meetings per User', 'Meetings attended per user', PURPLE),
-             ('bs_kpi_docs', 'BS Docs Viewed per User', 'Documents viewed per user', BLUE),
-             ('bs_kpi_mail', 'BS Emails per User', 'Emails sent + read per user', GREEN),
-             ('bs_kpi_edit', 'BS Docs Edited per User', 'Documents edited per user', ORANGE)]
-    for i, (name, m, label, color) in enumerate(cards):
-        card(r, P_BENEFIT, name, (16 + i * 182, 76, 170, 96), (RT, m), label, color)
-    win_s = r.clone(P_DR, 'dr_window', P_BENEFIT, 'bs_window', (748, 76, 248, 96))
+           'Pick a signal: who carries the most of it compared with the average user, and the Copilot feature that lightens it')
+    tabs = r.clone(P_ENABLE, '71bd7ac1d2ae2b75ae20', P_BENEFIT, 'bs_tabs', (16, 76, 716, 64))
+    set_query(tabs, {'Values': [proj('Benefit Signal', 'Signal', 'Column')]},
+              ('Benefit Signal', 'Signal', 'Column', 'Ascending'))
+    lay = tabs['visual']['objects']['layout'][0]['properties']
+    lay.update(columnCount=lit('4L'), maxTiles=lit('4L'), fixedWidth=lit('170L'), fixedHeight=lit('32L'))
+    tabs['visual']['objects']['general'][0]['properties']['filter']['filter'] = {
+        'Version': 2, 'From': [{'Name': 'b', 'Entity': 'Benefit Signal', 'Type': 0}],
+        'Where': [{'Condition': {'In': {'Expressions': [{'Column': {'Expression': {'SourceRef': {'Source': 'b'}},
+                                                                    'Property': 'Signal'}}],
+                                        'Values': [[lit("'Meetings'")['expr']]]}}}]}
+    set_title(tabs, 'Signal')
+    set_alt(tabs, 'Choose the M365 signal: meetings, documents viewed, emails or documents edited')
+    r.put(P_BENEFIT, tabs)
+    win_s = r.clone(P_DR, 'dr_window', P_BENEFIT, 'bs_window', (748, 76, 248, 64))
     set_query(win_s, {'Values': [proj('Lookback Window', 'Label', 'Column')]})
     set_title(win_s, 'Lookback window')
     r.put(P_BENEFIT, win_s)
-    lic = r.clone(P_DR, 'dr_country', P_BENEFIT, 'bs_license', (1016, 76, 248, 96))
+    lic = r.clone(P_DR, 'dr_country', P_BENEFIT, 'bs_license', (1016, 76, 248, 64))
     set_query(lic, {'Values': [proj('EntraUsers', 'Has Copilot License', 'Column')]})
     set_title(lic, 'Copilot licence')
     r.put(P_BENEFIT, lic)
 
-    chart = r.clone(P_DR, 'dr_gap_chart', P_BENEFIT, 'bs_dept_chart', (16, 184, 500, 524))
+    cards = [('bs_kpi_avg', 'BS Selected Avg User', 'Average user (per active user)', PURPLE, '22D'),
+             ('bs_kpi_heavy', 'BS Selected Heavy Users', 'Users at 1.5x the average or more', ORANGE, '22D'),
+             ('bs_kpi_feature', 'BS Selected Feature', 'Copilot feature that lightens this load', GREEN, '18D')]
+    for i, (name, m, label, color, size) in enumerate(cards):
+        card(r, P_BENEFIT, name, (16 + i * 420, 152, 408, 80), (RT, m), label, color, size)
+
+    chart = r.clone(P_DR, 'dr_gap_chart', P_BENEFIT, 'bs_dept_chart', (16, 244, 500, 464))
     set_query(chart, {'Category': [proj('EntraUsers', 'department', 'Column', 'Department')],
-                      'Y': [proj(RT, 'BS Meetings Index', 'Measure', 'Meetings'),
-                            proj(RT, 'BS Docs Viewed Index', 'Measure', 'Docs viewed'),
-                            proj(RT, 'BS Emails Index', 'Measure', 'Emails'),
-                            proj(RT, 'BS Docs Edited Index', 'Measure', 'Docs edited')]},
-              (RT, 'BS Meetings Index', 'Measure', 'Descending'))
+                      'Y': [proj(RT, 'BS Above Avg', 'Measure', 'Above average'),
+                            proj(RT, 'BS Below Avg', 'Measure', 'Below average')],
+                      'Tooltips': [proj(RT, 'BS Selected vs Avg', 'Measure', 'vs average'),
+                                   proj(RT, 'BS Selected per User', 'Measure', 'Per active user'),
+                                   proj(RT, 'BS Selected Avg User', 'Measure', 'Average user')]},
+              (RT, 'BS Selected vs Avg', 'Measure', 'Descending'))
+    colors(chart, {f'{RT}.BS Above Avg': PURPLE, f'{RT}.BS Below Avg': '#A0A7B4'})
     va = chart['visual']['objects']['valueAxis'][0]['properties']
-    va['titleText'] = lit("'Load vs. average user (1.0 = average)'")
-    va['labelDisplayUnits'] = lit("'1'")
-    va['labelPrecision'] = lit('1L')
-    chart['visual']['objects']['labels'] = [{'properties': {'show': lit('false')}}]
-    set_title(chart, 'Which departments carry the most load Copilot can lighten')
-    set_alt(chart, 'Meetings, documents viewed, emails and edits per user by department, indexed to the average user')
+    va['titleText'] = q('% above or below the average user')
+    for k in ('labelDisplayUnits', 'labelPrecision'):
+        va.pop(k, None)
+        chart['visual']['objects']['labels'][0]['properties'].pop(k, None)
+    dynamic_title(chart, 'BS Chart Title')
+    subtitle(chart, 'Per active user in each department, compared with the average user (0% = average)')
+    set_alt(chart, 'Selected signal per user by department, as % above or below the average user')
     r.put(P_BENEFIT, chart)
 
-    tbl = r.clone(P_ALLOC, 'v_tbl_assign', P_BENEFIT, 'bs_user_table', (532, 184, 732, 524))
+    tbl = r.clone(P_ALLOC, 'v_tbl_assign', P_BENEFIT, 'bs_user_table', (532, 244, 732, 464))
     set_query(tbl, {'Values': [proj('EntraUsers', 'displayName', 'Column', 'User'),
                                proj('EntraUsers', 'department', 'Column', 'Department'),
-                               proj(RT, 'BS Meetings Attended', 'Measure', 'Meetings'),
-                               proj(RT, 'BS Docs Viewed', 'Measure', 'Docs viewed'),
-                               proj(RT, 'BS Emails', 'Measure', 'Emails'),
-                               proj(RT, 'BS Docs Edited', 'Measure', 'Docs edited'),
-                               proj(RT, 'BS Top Index', 'Measure', 'Strength vs avg'),
-                               proj(RT, 'BS Top Benefit', 'Measure', 'Biggest Copilot benefit (why)')]},
-              (RT, 'BS Top Index', 'Measure', 'Descending'))
+                               proj(RT, 'BS Selected Value', 'Measure', 'This user'),
+                               proj(RT, 'BS Selected Avg User', 'Measure', 'Average user'),
+                               proj(RT, 'BS Selected vs Avg', 'Measure', 'vs average'),
+                               proj(RT, 'BS Top Benefit', 'Measure', 'Best overall Copilot fit (why)')]},
+              (RT, 'BS Selected vs Avg', 'Measure', 'Descending'))
     word_wrap(tbl)
-    set_title(tbl, 'Who benefits most, and why: their load compared with the average user')
+    dynamic_title(tbl, 'BS Table Title')
+    subtitle(tbl, 'Count in the lookback window vs the average active user. Last column: strongest signal across all four tabs.')
     r.put(P_BENEFIT, tbl)
 
 
@@ -661,39 +820,77 @@ def word_wrap(v: dict):
         o.setdefault(k, [{'properties': {}}])[0]['properties']['wordWrap'] = lit('true')
 
 
+ALLOC_DROP = ['024cb4316347ed897d52', 'eca78a6c6b8bca067600', '102a0884856ee3516d7e', 'v_side_bg', 'v_side_h1',
+              'v_side_lbl_country', 'v_side_lbl_dept', 'v_side_lbl_sig', 'v_side_lbl_win', '233df2481a9a66ea9c63',
+              '4e96b98c7235913bf274', '7ffbdbb9115bfe32558b', '95cfb5d35fda40fb8126', 'v_kpi_1', 'v_kpi_2', 'v_kpi_3',
+              'v_kpi_4']
+
+
+def column_filter(name: str, entity: str, prop: str, value: str) -> dict:
+    return {'name': name, 'field': field(entity, prop, 'Column'), 'type': 'Categorical', 'howCreated': 'User',
+            'filter': {'Version': 2, 'From': [{'Name': 'e', 'Entity': entity, 'Type': 0}],
+                       'Where': [{'Condition': {'In': {
+                           'Expressions': [{'Column': {'Expression': {'SourceRef': {'Source': 'e'}}, 'Property': prop}}],
+                           'Values': [[{'Literal': {'Value': value}}]]}}}]}}
+
+
+def measure_filter(name: str, entity: str, prop: str, kind: int, value: str) -> dict:
+    return {'name': name, 'field': field(entity, prop), 'type': 'Advanced', 'howCreated': 'User',
+            'filter': {'Version': 2, 'From': [{'Name': 'm', 'Entity': entity, 'Type': 0}],
+                       'Where': [{'Condition': {'Comparison': {
+                           'ComparisonKind': kind,
+                           'Left': {'Measure': {'Expression': {'SourceRef': {'Source': 'm'}}, 'Property': prop}},
+                           'Right': {'Literal': {'Value': value}}}}}]}}
+
+
 def build_allocation(r: Report):
     p = r.page(P_ALLOC)
     p['displayName'] = 'Copilot License Allocation'
     r.put_page(P_ALLOC, p)
-    v = r.get(P_ALLOC, 'eca78a6c6b8bca067600')
-    retext(v, 'Copilot License Allocation')
-    r.put(P_ALLOC, v)
-    v = r.get(P_ALLOC, '102a0884856ee3516d7e')
-    retext(v, 'Left: reclaim or enable idle licences. Right: assign freed licences to the users with the highest Copilot Readiness Score.')
-    r.put(P_ALLOC, v)
-    v = r.get(P_ALLOC, 'v_side_lbl_sig')
-    retext(v, 'Readiness focus')
-    v['position'].update(height=34)
-    r.put(P_ALLOC, v)
-    v = r.get(P_ALLOC, 'v_slc_sig')
-    set_query(v, {'Values': [proj('Readiness Focus', 'Focus', 'Column')]})
-    v['visual']['objects'].setdefault('selection', [{'properties': {}}])[0]['properties']['singleSelect'] = lit('true')
-    r.put(P_ALLOC, v)
+    for vid in ALLOC_DROP:
+        r.drop(f'{PAGES}{P_ALLOC}/visuals/{vid}/')
+    header(r, P_ALLOC, 'Copilot License Allocation',
+           'Left: licensed users busy in M365 but not using Copilot (coach first). Right: unlicensed users to license next.')
 
-    v = r.get(P_ALLOC, 'v_kpi_4')
-    v.pop('filterConfig', None)
-    set_query(v, {'Values': [proj(RT, 'RS Assign Now Count', 'Measure', 'Ready to assign')]})
-    set_title(v, '⭐  Ready to Assign (score 70+)')
-    r.put(P_ALLOC, v)
+    cards = [('al_kpi_total', ('Optimizer Measures', 'OPT Total Licensed Users'), 'Copilot licences', PURPLE),
+             ('al_kpi_idle', ('Optimizer Measures', 'OPT Inactive Licensed Count Display'), 'Idle licences (no Copilot in window)', PURPLE),
+             ('al_kpi_value', ('Optimizer Measures', 'OPT Monthly Reclaim Value Display'), 'Monthly cost of idle licences', ORANGE),
+             ('al_kpi_ready', (RT, 'RS Assign Now Count'), 'Ready to assign (score 70+)', GREEN)]
+    for i, (name, m, label, color) in enumerate(cards):
+        card(r, P_ALLOC, name, (16 + i * 316, 76, 300, 88), m, label, color, '24D')
+
+    slicers = [('v_slc_win', 'Idle after (days without Copilot)', True),
+               ('v_slc_sig', 'Readiness focus (right table)', True),
+               ('v_slc_dept', 'Department', False),
+               ('v_slc_country', 'Country', False)]
+    for i, (vid, title, single) in enumerate(slicers):
+        v = r.get(P_ALLOC, vid)
+        if vid == 'v_slc_sig':
+            set_query(v, {'Values': [proj('Readiness Focus', 'Focus', 'Column')]})
+        dropdown(v, title, single)
+        v['position'].update(x=16 + i * 316, y=176, width=300, height=64)
+        r.put(P_ALLOC, v)
 
     v = r.get(P_ALLOC, 'v_tbl_reclaim')
-    v['position'].update(x=232, width=400)
+    v['position'].update(x=16, y=252, width=616, height=456)
+    set_query(v, {'Values': [proj('EntraUsers', 'displayName', 'Column', 'User'),
+                             proj('EntraUsers', 'department', 'Column', 'Department'),
+                             proj(RT, 'LU M365 Days', 'Measure', 'M365 days (last 30)'),
+                             proj(RT, 'LU Copilot Days', 'Measure', 'Copilot days (last 30)'),
+                             proj(RT, 'LU Gap Days', 'Measure', 'Gap (days)'),
+                             proj(RT, 'LU Last Copilot', 'Measure', 'Last Copilot use')]},
+              (RT, 'LU Gap Days', 'Measure', 'Descending'))
+    v['filterConfig'] = {'filters': [column_filter('lu_licensed', 'EntraUsers', 'hasLicense', 'true'),
+                                     measure_filter('lu_gap', RT, 'LU Gap Days', 1, '0L')]}
     word_wrap(v)
+    set_title(v, 'Licensed, busy in M365, not using Copilot')
+    subtitle(v, 'Ranked by gap = M365 days minus Copilot days. Top rows: coach first. Low M365 days: reclaim.')
     r.put(P_ALLOC, v)
 
+    gate_banner(r, P_ALLOC, 'v_gate', (644, 252, 620, 48))
     v = r.get(P_ALLOC, 'v_tbl_assign')
     v.pop('filterConfig', None)
-    v['position'].update(x=644, y=216, width=620, height=488)
+    v['position'].update(x=644, y=308, width=620, height=400)
     set_query(v, {'Values': [proj('EntraUsers', 'displayName', 'Column', 'User'),
                              proj('EntraUsers', 'department', 'Column', 'Department'),
                              proj(RT, 'RS Score', 'Measure', 'Score'),
@@ -704,39 +901,60 @@ def build_allocation(r: Report):
                              proj(RT, 'RS Why', 'Measure', 'Why')]},
               (RT, 'RS Score', 'Measure', 'Descending'))
     word_wrap(v)
-    set_title(v, '⭐  Assign Next: who scores highest, and the evidence')
+    set_title(v, 'Unlicensed: who should get a licence next')
+    subtitle(v, 'Highest Copilot Readiness Score first, with the evidence behind it.')
     r.put(P_ALLOC, v)
-    gate_banner(r, P_ALLOC, 'v_gate', (644, 172, 620, 40))
 
 
 def build_dr(r: Report):
     p = r.page(P_DR)
     p['displayName'] = 'Department Readiness'
     r.put_page(P_DR, p)
-    v = r.get(P_DR, 'dr_kpi_champions')
-    set_query(v, {'Data': [proj(RT, 'RS Avg Readiness', 'Measure', 'Avg readiness score (unlicensed)')]})
-    set_alt(v, 'Average Copilot Readiness Score of unlicensed users')
+    kpis = {'dr_kpi_coverage': ('Department Readiness', 'DR License Coverage', 'Licensed (% of users)'),
+            'dr_kpi_utilization': ('Department Readiness', 'DR Licensed Utilization', 'Licensed & using Copilot'),
+            'dr_kpi_prompts': ('Department Readiness', 'DR Enablement Target Users', 'Users to enable'),
+            'dr_kpi_champions': (RT, 'RS Assign Now Count', 'Ready to assign (70+)')}
+    for vid, (ent, m, label) in kpis.items():
+        v = r.get(P_DR, vid)
+        set_query(v, {'Data': [proj(ent, m, 'Measure', label)]})
+        set_alt(v, label)
+        r.put(P_DR, v)
+
+    v = r.get(P_DR, 'dr_gap_chart')
+    explain_gap(v, 'Enablement gap: is M365 activity ahead of Copilot use?')
     r.put(P_DR, v)
+
+    v = r.get(P_DR, 'dr_utilization_chart')
+    relabel(v, 'Y', 'DR License Coverage', 'Licensed (% of users)')
+    relabel(v, 'Y', 'DR Licensed Utilization', 'Licensed & using Copilot (%)')
+    set_title(v, 'Licences vs. use')
+    subtitle(v, 'Blue: share of users with a licence. Purple: share of licensed users who use Copilot.')
+    tooltip(v, 'Licensed (% of users) = users with a Copilot licence / all users in the department. Licensed & using '
+               'Copilot = licensed users with at least one Copilot prompt in the benchmark window / licensed users. '
+               'Low blue: room to assign. Low purple: licences are idle, so enable before buying more.')
+    r.put(P_DR, v)
+
     v = r.get(P_DR, 'dr_action_table')
-    roles = {k: s['projections'] for k, s in v['visual']['query']['queryState'].items()}
-    vals = []
-    for pr in roles['Values']:
-        if pr['field']['Measure']['Property'] == 'DR Champion Rate':
-            vals += [proj(RT, 'RS Avg Readiness', 'Measure', 'Avg Readiness Score'),
-                     proj(RT, 'RS Assign Now Count', 'Measure', 'Ready to Assign')]
-        else:
-            vals.append(pr)
-    roles['Values'] = vals
-    sort = v['visual']['query'].get('sortDefinition')
-    set_query(v, roles)
-    if sort and 'Champion' not in json.dumps(sort):
-        v['visual']['query']['sortDefinition'] = sort
+    rows = v['visual']['query']['queryState']['Rows']['projections']
+    old = {next(iter(pr['field'].values()))['Property']: pr for pr in v['visual']['query']['queryState']['Values']['projections']}
+    users = old['DR Department Users']
+    action = old['DR Recommended Action']
+    set_query(v, {'Rows': rows,
+                  'Values': [users,
+                             proj(RT, 'RS Assign Now Count', 'Measure', 'Ready to assign'),
+                             proj('Department Readiness', 'DR Enablement Target Users', 'Measure', 'Users to enable'),
+                             action,
+                             proj(RT, 'DR Action Why', 'Measure', 'Why')]},
+              ('Department Readiness', 'DR Enablement Target Users', 'Measure', 'Descending'))
+    word_wrap(v)
+    set_title(v, 'What to do in each department, and why')
+    subtitle(v, 'Ready to assign: unlicensed users scoring 70+. Users to enable: busy in M365 (top half) but light on Copilot (bottom half).')
     r.put(P_DR, v)
     t = r.get(P_DR, 'dr_title')
     retext(t, 'Department Readiness')
     r.put(P_DR, t)
     s = r.get(P_DR, 'dr_subtitle')
-    retext(s, 'Which departments to license and enable first: coverage, utilization, readiness gap and recommended action')
+    retext(s, 'Which departments to license and enable first, and why')
     r.put(P_DR, s)
 
 
@@ -749,10 +967,10 @@ def rename(r: Report, page: str, title_vid: str, name: str):
     r.put(page, v)
 
 
-TITLES = {P_ALLOC: 'eca78a6c6b8bca067600', P_ENABLE: 'd95a03997924d476c805', P_TRENDS: '536bc5bf159dab30065e',
+TITLES = {P_ALLOC: 'hdr_title', P_ENABLE: 'd95a03997924d476c805', P_TRENDS: '536bc5bf159dab30065e',
           P_ACTIVITY: '0c5207fd21033081c888', P_GLOSSARY: 'c08b3bf77c9303ce33e0', P_DR: 'dr_title',
           P_OVERVIEW: 'hdr_title', P_BENEFIT: 'hdr_title'}
-SUBTITLES = {P_ALLOC: '102a0884856ee3516d7e', P_ENABLE: '50e580404b0541a2b049', P_GLOSSARY: 'ba4c6965487c8709910d',
+SUBTITLES = {P_ALLOC: 'hdr_subtitle', P_ENABLE: '50e580404b0541a2b049', P_GLOSSARY: 'ba4c6965487c8709910d',
              P_DR: 'dr_subtitle'}
 
 
@@ -785,7 +1003,7 @@ def fonts(r: Report, page: str):
                     st = run.setdefault('textStyle', {})
                     cur = float(str(st.get('fontSize', '10pt')).rstrip('pt') or 10)
                     st['fontSize'] = f'{size}pt' if size else f'{max(cur, 10):g}pt'
-            if size == 20 and page not in (P_DR, P_OVERVIEW, P_BENEFIT):
+            if size == 20 and page not in (P_DR, P_OVERVIEW, P_BENEFIT, P_ALLOC):
                 v['position']['height'] = max(v['position']['height'], 40)
             if size == 12 and page != P_DR:
                 v['position']['height'] = max(v['position']['height'], 24)
@@ -811,10 +1029,6 @@ def fonts(r: Report, page: str):
                     if fs and fs['expr']['Literal']['Value'] == '18D':
                         fs['expr']['Literal']['Value'] = '22D'
         r.put(page, v)
-    if page == P_ALLOC:
-        v = r.get(P_ALLOC, '102a0884856ee3516d7e')
-        v['position'].update(y=40, height=26, width=1100)
-        r.put(P_ALLOC, v)
 
 
 def build_report(r: Report):
@@ -824,9 +1038,9 @@ def build_report(r: Report):
         for vid in vids:
             r.drop(f'{PAGES}{pid}/visuals/{vid}/')
     build_allocation(r)
-    build_dr(r)
     build_overview(r)
     build_benefit(r)
+    build_dr(r)
     rename(r, P_TRENDS, TITLES[P_TRENDS], 'Appendix: M365 Usage Trends')
     rename(r, P_ACTIVITY, TITLES[P_ACTIVITY], 'Appendix: M365 Usage Activity')
     rename(r, P_ENABLE, TITLES[P_ENABLE], 'Copilot Enablement')
