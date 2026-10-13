@@ -227,6 +227,11 @@ LU_MEASURES = [
     ('LU Gap Days', 'MAX(0, [LU M365 Days] - [LU Copilot Days])', '0'),
     ('LU Last Copilot', 'VAR D = [OPT Days Since Last Copilot]\nRETURN IF(ISBLANK(D), "Never", '
      'IF(D = 0, "Today", D & IF(D = 1, " day ago", " days ago")))', None),
+    ('Avg Actions per User by Tier and App',
+     "CALCULATE(DIVIDE(SUM(M365Usage[EventCount]), DISTINCTCOUNT(M365Usage[UserId])),\n"
+     "    TREATAS(VALUES('M365 Tiers'[M365TierName]), M365Usage[M365 Tier Column]),\n"
+     "    TREATAS(VALUES('App Actions Table'[AppName]), M365Usage[App Column]),\n"
+     "    REMOVEFILTERS('App Selection'))", '#,0'),
 ]
 
 DR_WHY = '''VAR M = [DR Average M365 Percentile]
@@ -960,6 +965,7 @@ def build_dr(r: Report):
 CONTENT_W = 1040          # content area: x 16 .. 1056
 RAIL = (1072, 64, 208, 656)  # right filter rail: x 1072 .. 1280, below the header
 RAIL_X, RAIL_W = 1080, 192
+DROP_H, DATE_H = 76, 124  # slicer heights leave room below the control
 
 
 def place(r: Report, page: str, vid: str, x: int, y: int, w: int, h: int, z: int | None = None):
@@ -1037,14 +1043,14 @@ def layout(r: Report):
     place(r, P_OVERVIEW, 'ov_gate', 16, 184, CONTENT_W, 48)
     row(r, P_OVERVIEW, ['ov_tier_chart', 'ov_days_chart', 'ov_gap_chart'], 244, 300)
     place(r, P_OVERVIEW, 'ov_guide', 16, 556, CONTENT_W, 152)
-    rail(r, P_OVERVIEW, [('ov_dept', 64, None), ('ov_country', 64, None)])
+    rail(r, P_OVERVIEW, [('ov_dept', DROP_H, None), ('ov_country', DROP_H, None)])
 
     row(r, P_ALLOC, ['al_kpi_total', 'al_kpi_idle', 'al_kpi_value', 'al_kpi_ready'], 76, 88)
     place(r, P_ALLOC, 'v_tbl_reclaim', 16, 176, 512, 532)
     place(r, P_ALLOC, 'v_gate', 544, 176, 512, 48)
     place(r, P_ALLOC, 'v_tbl_assign', 544, 236, 512, 472)
-    rail(r, P_ALLOC, [('v_slc_win', 64, None), ('v_slc_sig', 64, None), ('v_slc_dept', 64, None),
-                      ('v_slc_country', 64, None)])
+    rail(r, P_ALLOC, [('v_slc_win', DROP_H, None), ('v_slc_sig', DROP_H, None), ('v_slc_dept', DROP_H, None),
+                      ('v_slc_country', DROP_H, None)])
 
     v = place(r, P_BENEFIT, 'bs_tabs', 16, 76, CONTENT_W, 64)
     tiles_width(v, 4, CONTENT_W)
@@ -1052,13 +1058,13 @@ def layout(r: Report):
     row(r, P_BENEFIT, ['bs_kpi_avg', 'bs_kpi_heavy', 'bs_kpi_feature'], 152, 80)
     place(r, P_BENEFIT, 'bs_dept_chart', 16, 244, 420, 464)
     place(r, P_BENEFIT, 'bs_user_table', 452, 244, 604, 464)
-    rail(r, P_BENEFIT, [('bs_window', 64, None), ('bs_license', 64, None)])
+    rail(r, P_BENEFIT, [('bs_window', DROP_H, None), ('bs_license', DROP_H, None)])
 
     row(r, P_DR, ['dr_kpi_coverage', 'dr_kpi_utilization', 'dr_kpi_prompts', 'dr_kpi_champions'], 76, 88)
     place(r, P_DR, 'dr_gap_chart', 16, 176, 512, 280)
     place(r, P_DR, 'dr_utilization_chart', 544, 176, 512, 280)
     place(r, P_DR, 'dr_action_table', 16, 468, CONTENT_W, 240)
-    rail(r, P_DR, [('dr_window', 64, None), ('dr_country', 64, None)])
+    rail(r, P_DR, [('dr_window', DROP_H, None), ('dr_country', DROP_H, None)])
 
     rehead(r, P_ENABLE, 'Copilot Enablement', 'Copilot Enablement',
            'Who to coach first: users highly active in M365 but not yet using Copilot are the fastest wins',
@@ -1075,8 +1081,8 @@ def layout(r: Report):
     place(r, P_ENABLE, '637d7412d0d864bc8e7a', 16, 248, CONTENT_W, 40)
     place(r, P_ENABLE, 'ec5a5a9cc6ea4abd78ec', 16, 296, CONTENT_W, 360)
     place(r, P_ENABLE, 'b416d2b1a41ed8aaeed4', 16, 664, CONTENT_W, 44)
-    rail(r, P_ENABLE, [('037fb402726b64a08631', 96, 'Date range'), ('3c8327393b91c75ed514', 64, 'Department'),
-                       ('0cb63db0d537d3080a65', 64, 'Copilot licence')])
+    rail(r, P_ENABLE, [('037fb402726b64a08631', DATE_H, 'Date range'), ('3c8327393b91c75ed514', DROP_H, 'Department'),
+                       ('0cb63db0d537d3080a65', DROP_H, 'Copilot licence')])
 
     rehead(r, P_TRENDS, 'Appendix: M365 Usage Trends', 'Appendix: M365 Usage Trends',
            'How M365 activity is trending over time, by app, department and user tier',
@@ -1086,7 +1092,15 @@ def layout(r: Report):
         place(r, P_TRENDS, vid, 16, y, 400, h)
     for vid, y, h in (('67927ef6d22309570837', 184, 224), ('cb152b3ea00508b03020', 424, 176), ('2ecc8517ce9b098c01d0', 616, 92)):
         place(r, P_TRENDS, vid, 432, y, 624, h)
-    rail(r, P_TRENDS, [('6104e40e443301c50e28', 96, 'Date range'), ('e565ba805990017717cb', 64, 'Department')])
+    v = r.get(P_TRENDS, 'cb152b3ea00508b03020')
+    qs = v['visual']['query']['queryState']
+    set_query(v, {'Columns': qs['Columns']['projections'], 'Rows': qs['Rows']['projections'],
+                  'Values': [proj(RT, 'Avg Actions per User by Tier and App', 'Measure', 'Avg actions per user')]},
+              ('M365 Tiers', 'M365TierDisplay', 'Column', 'Descending'))
+    relabel(v, 'Rows', 'M365TierDisplay', 'M365 tier')
+    set_title(v, 'Average actions per user, by tier and app')
+    r.put(P_TRENDS, v)
+    rail(r, P_TRENDS, [('6104e40e443301c50e28', DATE_H, 'Date range'), ('e565ba805990017717cb', DROP_H, 'Department')])
 
     rehead(r, P_ACTIVITY, 'Appendix: M365 Usage Activity', 'Appendix: M365 Usage Activity',
            'Daily M365 activity by app, department and engagement segment',
@@ -1098,9 +1112,9 @@ def layout(r: Report):
     place(r, P_ACTIVITY, 'f6aa40b68260cd3837d4', 544, 176, 512, 224)
     place(r, P_ACTIVITY, 'bc1024f0092583955bb5', 544, 412, 512, 140)
     place(r, P_ACTIVITY, 'cdc94c7eab8be764099c', 544, 564, 512, 144)
-    rail(r, P_ACTIVITY, [('2c92acc95bc4bb338342', 96, 'Date range'), ('0db8aa47945576a60804', 64, 'Department'),
-                         ('ec463aefb34ed742e3b9', 64, 'App')],
-         [('6d94a0a6555251c2d88a', 200), ('42b59526b0913c2d8e01', 128)])
+    rail(r, P_ACTIVITY, [('2c92acc95bc4bb338342', DATE_H, 'Date range'), ('0db8aa47945576a60804', DROP_H, 'Department'),
+                         ('ec463aefb34ed742e3b9', DROP_H, 'App')],
+         [('6d94a0a6555251c2d88a', 176), ('42b59526b0913c2d8e01', 112)])
 
     rehead(r, P_GLOSSARY, r.page(P_GLOSSARY)['displayName'], 'Metric Glossary',
            'Definitions, calculations and data sources for every metric. Filter by page on the right.',
