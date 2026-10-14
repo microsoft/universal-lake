@@ -27,6 +27,8 @@ The [M365 Usage Analytics](https://github.com/microsoft/M365UsageAnalytics) temp
 
 On the first refresh Power BI asks you to approve each native database query. Select **Run** for each.
 
+To see the report before you set up the lake, open the [sample with made-up data](samples).
+
 To change a query, edit `scripts/gen_m365_usage_sql.py`, then run `python scripts/gen_m365_usage_sql.py` and `python scripts/patch_m365_pbit.py`. `scripts/test_m365_usage_sql.py` checks the queries against the original M365 Usage Analytics processor.
 
 ## Share it
