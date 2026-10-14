@@ -1,5 +1,7 @@
 # Universal Data Lake for Microsoft 365 and Copilot data
 
+> Copilot analytics on Microsoft Fabric: one Lakehouse for the Purview audit log, Copilot and agent usage, Microsoft 365 app usage, Entra ID org data and AI spend, with semantic models and ready-made Power BI templates (ValueLens, AI-in-One, M365 Usage Analytics).
+
 Build **one Microsoft Fabric Lakehouse** that holds your Microsoft 365 Copilot data, your agent data, and how people use Teams, Outlook, Word, Excel, PowerPoint, OneNote, SharePoint, OneDrive and Viva Engage. The data is cleaned and shaped into report-ready tables, and **semantic models** sit on top, ready for Power BI, Copilot in Power BI, data agents or your own SQL.
 
 **Why bother?** Most Copilot and Microsoft 365 reports each collect their own copy of the data, so every new report means setting up the same sources, permissions and refreshes again. Build the lake once and that stops:
@@ -18,7 +20,7 @@ flowchart LR
   N --> L[("One Lakehouse<br/>raw → cleaned → report-ready<br/>(step 6)")]
   L --> M["Semantic models<br/>(step 6)"]
   M -.-> U["Fabric apps, agents<br/>(later, separate)"]
-  L --> T["Power BI templates<br/>ValueLens, AI-in-One<br/>(step 8)"]
+  L --> T["Power BI templates<br/>ValueLens, AI-in-One,<br/>M365 Usage Analytics<br/>(step 8)"]
 ```
 
 ## Disclaimer

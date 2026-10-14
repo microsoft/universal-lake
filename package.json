@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "description": "Step-by-step, traceable build of a Universal Data Lake and semantic models for Microsoft 365 and Copilot data on Microsoft Fabric.",
+  "keywords": ["microsoft-fabric", "lakehouse", "power-bi", "microsoft-365", "m365-copilot", "copilot-analytics", "copilot-studio", "purview-audit-log", "microsoft-graph", "entra-id", "semantic-model", "ai-adoption"],
+  "homepage": "https://github.com/microsoft/universal-lake#readme",
+  "repository": { "type": "git", "url": "https://github.com/microsoft/universal-lake.git" },
+  "bugs": "https://github.com/microsoft/universal-lake/issues",
   "license": "MIT",
   "engines": {
     "node": ">=20.12"
