@@ -6,7 +6,7 @@ Build **one Microsoft Fabric Lakehouse** that holds your Microsoft 365 Copilot d
 
 **Why bother?** Most Copilot and Microsoft 365 reports each collect their own copy of the data, so every new report means setting up the same sources, permissions and refreshes again. Build the lake once and that stops:
 
-* **Plug in our Power BI templates** without repeating the setup for each report. They all read the same Lakehouse ([templates](08-report-templates/README.md)).
+* **Plug in our Power BI templates** without repeating the setup for each report. They all read the same Lakehouse ([templates](08-report-templates/README.md)). To see one first, open a [sample report](samples) with made-up data.
 * **Build your own analytics and observability foundation.** All the data sits in one place you own, ready for your own reports, Fabric apps, data agents or plain SQL.
 * **Know exactly what's going on.** Every step is a notebook you can open, read, change and rerun, so you can customise what's collected and how it's shaped.
 
