@@ -84,7 +84,7 @@ Steps 1–3 are set up in portals. After that, **the terminal does almost everyt
 | [3. Configure](03-configure/README.md) | – | Finish `config.json`: data sources and your exports folder |
 | [4. Deploy](04-deploy/README.md)<br/>[5. Ingest](05-ingest/README.md)<br/>[6. Models](06-models/README.md) | **`npm run deploy -- --run first_load`**<br/>Creates the Lakehouse, uploads everything, checks setup, then loads the data and builds the models. Prints the model links when done. | `npm run deploy`, then in Fabric open `Lake_Orchestrator`, set `RUN_MODE = 'first_load'`, **Run all** |
 | [7. Orchestrate](07-orchestrate/README.md)<br/>[9. Auto-refresh](09-autorefresh/README.md) | **`npm run deploy -- --schedule 06:00`**<br/>Daily refresh. Re-run what failed: `npm run deploy -- --rerun-failed` | Schedule `Lake_Orchestrator` in Fabric; [re-run only what failed](07-orchestrate/RERUNS.md) |
-| [8. Reports](08-report-templates/README.md) | – | Open the ValueLens or AI-in-One template in Power BI Desktop, point it at the Lakehouse, publish |
+| [8. Reports](08-report-templates/README.md) | – | Open the ValueLens, AI-in-One or [M365 Usage Analytics](08-report-templates/README.md#m365-usage-analytics) template in Power BI Desktop, point it at the Lakehouse, publish |
 
 Then do the one-time [set-and-forget checklist](09-autorefresh/README.md) so daily runs need no attention.
 
