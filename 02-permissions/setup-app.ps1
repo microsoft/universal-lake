@@ -44,10 +44,14 @@ $Modules = @('copilotInteractions') + ($Modules | ForEach-Object { if ($_ -eq 'c
 foreach ($m in $Modules) { if (-not $PERMS.ContainsKey($m)) { throw "Unknown module '$m'. Known: $($PERMS.Keys -join ', ')" } }
 $needed = $Modules | ForEach-Object { $PERMS[$_] } | Select-Object -Unique
 
+# Resolve the real az executable once: a function named Az would otherwise call itself (PowerShell names aren't case-sensitive).
+$AzExe = (Get-Command az -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+if (-not $AzExe) { throw 'Azure CLI (az) not found on PATH. Install it from https://aka.ms/installazurecli and run az login.' }
+
 function Az([string[]] $AzArgs, [switch] $Quiet) {
   $shown = ($AzArgs | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join ' '
   if (-not $Quiet) { Write-Host "  > az $shown" -ForegroundColor DarkGray }
-  $out = & az @AzArgs
+  $out = & $AzExe @AzArgs
   if ($LASTEXITCODE -ne 0) { throw "az $($AzArgs[0..1] -join ' ') failed (exit $LASTEXITCODE)" }
   return $out
 }
@@ -93,12 +97,19 @@ if ($SkipConsent) {
 }
 
 Write-Host "`n== 4. Client secret -> Key Vault '$KeyVaultName' / '$SecretName'" -ForegroundColor Cyan
+$vault = Az @('keyvault', 'show', '--name', $KeyVaultName, '-o', 'json') -Quiet | ConvertFrom-Json
+if ($vault.properties.publicNetworkAccess -eq 'Disabled') {
+  Write-Warning ("Key Vault '$KeyVaultName' has public network access disabled (often forced by tenant policy). " +
+    'This script can only write the secret from a network that can reach the vault (VNet, VPN or private endpoint), ' +
+    'and Fabric notebooks can only read it through a workspace managed private endpoint. ' +
+    'See 02-permissions/README.md > "Key Vault with public access disabled".')
+}
 $existing = Az @('keyvault', 'secret', 'list', '--vault-name', $KeyVaultName, '--query', "[?name=='$SecretName'].id", '-o', 'tsv') -Quiet
 if ($existing -and -not $RotateSecret) {
   Write-Host "  secret already in Key Vault; pass -RotateSecret to replace it"
 } elseif ($PSCmdlet.ShouldProcess($SecretName, "create $SecretYears-year client secret and store it in Key Vault")) {
   Write-Host "  > az ad app credential reset --id $appId --append --years $SecretYears --display-name universal-lake  (output hidden)" -ForegroundColor DarkGray
-  $secret = & az ad app credential reset --id $appId --append --years $SecretYears --display-name 'universal-lake' --query password -o tsv
+  $secret = & $AzExe ad app credential reset --id $appId --append --years $SecretYears --display-name 'universal-lake' --query password -o tsv
   if ($LASTEXITCODE -ne 0 -or -not $secret) { throw 'creating the client secret failed' }
   $tmp = New-TemporaryFile
   try {
@@ -122,7 +133,6 @@ if ($Modules -contains 'consumption' -and $AzureSubscriptionIds) {
   }
 }
 
-$vault = Az @('keyvault', 'show', '--name', $KeyVaultName, '-o', 'json') -Quiet | ConvertFrom-Json
 Write-Host "`n== Done. Put these in config.json:" -ForegroundColor Green
 Write-Host "  tenantId      $($acct.tenantId)"
 Write-Host "  appId         $appId"

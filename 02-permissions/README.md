@@ -39,6 +39,18 @@ The secret stays in the vault; the notebooks fetch it each run as the person run
 
 You need *Key Vault Secrets Officer* (or a vault admin's help) to create the secret.
 
+#### Key Vault with public access disabled
+
+Many tenants have a policy that sets **Networking > Public access** to *Disabled* on every Key Vault. Then:
+
+* **Writing the secret** (step 2 above, or `setup-app.ps1`) only works from a network that can reach the vault: a VNet-connected machine, VPN, or a private endpoint. `setup-app.ps1` warns when it detects this. Otherwise ask a vault admin to add the secret for you.
+* **Reading the secret from notebooks** needs a **managed private endpoint** from the Fabric workspace to the vault:
+  1. Fabric workspace > **Workspace settings > Network security > Managed private endpoints > Create**. Pick the Key Vault's resource ID and the `vault` sub-resource. You need to be workspace Admin, the workspace must be on a Fabric F or trial capacity, and the vault's subscription needs the `Microsoft.Network` resource provider registered.
+  2. A vault admin approves the request: Azure portal > the Key Vault > **Networking > Private endpoint connections > Approve**.
+  3. Wait until the endpoint shows *Approved* in Fabric, then run the notebooks as usual.
+
+If neither is possible yet, Option 2 below gets a first run working.
+
 ### Option 2: put the secret in `config.json` (not recommended)
 
 Use this only if you don't have a Key Vault yet, or can't get the Secrets Officer role, and want a first run working.

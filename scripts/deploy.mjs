@@ -651,9 +651,11 @@ async function runNotebook(ws, id, parameters, { wait, name = 'the notebook', bu
 }
 
 const DONE = ['Completed', 'Failed', 'Cancelled', 'Deduped'];
+// Fabric returns startTimeUtc/endTimeUtc without a zone suffix; Date.parse would read them as local time.
+const utc = (s) => (s ? Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z') : NaN);
 const duration = (job, fallbackStart) => {
-  const start = Date.parse(job.startTimeUtc ?? '') || fallbackStart;
-  const end = Date.parse(job.endTimeUtc ?? '') || Date.now();
+  const start = utc(job.startTimeUtc) || fallbackStart;
+  const end = utc(job.endTimeUtc) || Date.now();
   const m = Math.max(0, Math.round((end - start) / 60_000));
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
 };
@@ -663,7 +665,7 @@ const clock = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute:
 const RUN_STATUS = 'Files/universal_lake/runs/latest.json';
 async function readRunStatus(ws, lhId, job) {
   const st = await readLatestStatus(ws, lhId);
-  const jobStart = Date.parse(job.startTimeUtc ?? '');
+  const jobStart = utc(job.startTimeUtc);
   return st && jobStart && Date.parse(st.started) < jobStart - 10 * 60_000 ? null : st; // from an earlier run
 }
 
@@ -827,9 +829,9 @@ if (FLAGS.has('--watch')) {
   const orch = (await list(`/workspaces/${ws.id}/notebooks`)).find((n) => n.displayName === 'Lake_Orchestrator');
   if (!orch) fail(`No Lake_Orchestrator notebook in workspace ${ws.displayName}. Run npm run deploy first.`);
   const runs = await list(`/workspaces/${ws.id}/items/${orch.id}/jobs/instances`);
-  const latest = runs.sort((a, b) => Date.parse(b.startTimeUtc ?? 0) - Date.parse(a.startTimeUtc ?? 0))[0];
+  const latest = runs.sort((a, b) => (utc(b.startTimeUtc) || 0) - (utc(a.startTimeUtc) || 0))[0];
   if (!latest) fail('Lake_Orchestrator has not been run yet. Start it with npm run deploy -- --run first_load, or Run all in Fabric.');
-  console.log(`Latest Lake_Orchestrator run started ${new Date(latest.startTimeUtc).toLocaleString()}.`);
+  console.log(`Latest Lake_Orchestrator run started ${new Date(utc(latest.startTimeUtc)).toLocaleString()}.`);
   const job = await watchOrchestrator(ws, cfg.lakehouse.id, orch.id, `/workspaces/${ws.id}/items/${orch.id}/jobs/instances/${latest.id}`);
   process.exit(job.status === 'Completed' ? 0 : 1);
 }
