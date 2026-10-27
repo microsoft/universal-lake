@@ -16,10 +16,10 @@ All of these work on the same Lakehouse. None of them drops data, except where a
 
 **`RERUN_FAILED` in detail**: it reads the **latest** status of every step of `RUN_ID` from `ops.run_log` and leaves out the steps whose status is `succeeded`. It reruns `failed`, `paused` and `skipped` steps, and any step that never started. New rows are added under the **same `RUN_ID`**, so the run's history stays in one place. Dependencies count earlier successes in that run, so a processor that succeeded earlier in the run doesn't block promote.
 
-Find the run ID:
+Find the run ID (in the Lakehouse's SQL analytics endpoint):
 
 ```sql
-SELECT run_id, run_mode, min(started_at) AS started FROM ops.run_log GROUP BY run_id, run_mode ORDER BY started DESC LIMIT 10;
+SELECT TOP 10 run_id, run_mode, min(started_at) AS started FROM ops.run_log GROUP BY run_id, run_mode ORDER BY started DESC;
 ```
 
 ## Rerunning by hand, outside the orchestrator

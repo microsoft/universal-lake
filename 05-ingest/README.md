@@ -54,11 +54,11 @@ After these come `promote` ([step 6](../06-models/README.md#61-check-the-data)),
 * Only if it's still not done after that does the step end `paused`. Then retry with `RUN_ID` and `RERUN_FAILED = True` (see below), or raise `AUTO_RESUME`.
 * A window that fails even at 1 hour is a **gap**. The run reports it, and the next daily run refuses to start until you run once with `RUN_MODE = 'backfill'` over that period. This stops a gap from being silently skipped.
 
-See what was fetched:
+See what was fetched (in the Lakehouse's SQL analytics endpoint):
 
 ```sql
-SELECT run_id, source, mode, window_start, window_end, days, status, note
-FROM ops.backfill_ledger ORDER BY recorded_at DESC LIMIT 20;
+SELECT TOP 20 run_id, source, mode, window_start, window_end, days, status, note
+FROM ops.backfill_ledger ORDER BY recorded_at DESC;
 ```
 
 ## When a step fails

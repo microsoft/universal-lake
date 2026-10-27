@@ -51,11 +51,13 @@ These are the only ones you normally touch:
 
 ## Check a run
 
+Run these in the Lakehouse's SQL analytics endpoint:
+
 ```sql
 -- Runs, newest first
-SELECT run_id, run_mode, min(started_at) AS started,
+SELECT TOP 20 run_id, run_mode, min(started_at) AS started,
        sum(CASE WHEN event = 'end' AND status <> 'succeeded' THEN 1 ELSE 0 END) AS not_ok
-FROM ops.run_log GROUP BY run_id, run_mode ORDER BY started DESC LIMIT 20;
+FROM ops.run_log GROUP BY run_id, run_mode ORDER BY started DESC;
 
 -- One run, step by step
 SELECT step_no, step, status, round(duration_s / 60, 1) AS minutes, error
