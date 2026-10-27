@@ -3,7 +3,8 @@
     python scripts/gen_m365_usage_notebooks.py
 
 Writes notebooks/M365_Usage_Audit_Ingester.ipynb: Graph audit log -> dbo.m365_usage_rollup,
-dbo.connected_ai_app_interactions and dbo.ai_app_interactions. CopilotInteraction is not fetched here: the template
+dbo.connected_ai_app_interactions, dbo.ai_app_interactions and dbo.m365_teams_call_participation.
+CopilotInteraction is not fetched here: the template
 reads it from dbo.Copilot_Interactions_Parsed, which Copilot_Audit_Log_Direct_Ingester already writes.
 
 The notebook reuses the fetch, retry and staging cells of notebooks/Copilot_Audit_Log_Direct_Ingester.ipynb
@@ -29,7 +30,7 @@ OPERATIONS = [
     'MailItemsAccessed', 'MailboxLogin', 'Send',
     'MessageSent', 'MessageRead', 'MessagesListed', 'ChatRetrieved', 'ChatCreated',
     'MeetingParticipantJoined', 'MeetingStarted', 'MeetingEnded', 'MeetingParticipantDetail', 'MeetingDetail',
-    'TeamsSessionStarted',
+    'CallParticipantDetail', 'TeamsSessionStarted',
     'ConnectedAIAppInteraction', 'AIAppInteraction',
 ]
 
@@ -92,6 +93,12 @@ rolls each user's day up with the same rules as the template's own processor. Al
 - `dbo.m365_usage_rollup` — one row per user, day, operation, workload, file type, app and agent (the template's *Rollup* file, without AI operations)
 - `dbo.connected_ai_app_interactions` — one row per `ConnectedAIAppInteraction` audit record
 - `dbo.ai_app_interactions` — one row per `AIAppInteraction` audit record
+- `dbo.m365_teams_call_participation` — one row per Teams `CallParticipantDetail` / `MeetingParticipantDetail` record:
+  join and leave times, time in the call or meeting (`DurationSeconds`) and screen-share sessions (`ScreenShareCount`,
+  `ScreenShareSeconds`). `CallParticipantDetail` is kept out of the rollup so the template's current numbers don't change.
+
+The audit log has no audio/video split; per-user audio, video and screen-share seconds from the Teams usage report are in
+`m365_activity_daily` (Copilot_M365_Activity_Ingester).
 
 The template combines these with `Copilot_Interactions_Parsed`, `copilot_org_data` and `copilot_licensed_users` and
 computes its rollup, session stats, per-user statistics, cohorts and user directory with T-SQL on the SQL analytics endpoint.
@@ -131,7 +138,8 @@ Each audit record is parsed with Spark built-in functions — no Python UDFs —
 processor (v2.6.1): non-human identities are dropped, operations are canonicalised (`FileViewed` → `FileAccessed`,
 `MeetingParticipantJoined` → `MeetingParticipantDetail`, `ConnectedAIAppInteraction` → `AIAppInteraction`; the original
 name is kept in `SourceOperation`), each AI-app record counts as its exploded row count (largest Copilot array, capped at 1,000), and each `MailItemsAccessed`
-event counts the folder items it touched.
+event counts the folder items it touched. Teams call and meeting participant records also get their call ids, join and
+leave times, time in the call and screen-share sessions (`ArtifactsShared[].ArtifactShareSessions[]`).
 '''
 
 PARSE_CELL = r'''
@@ -144,9 +152,16 @@ ROLLUP_HEADER = ['UserId', 'CreationDate', 'Operation', 'Workload', 'SourceFileE
                  'AgentId', 'AgentName', 'ContextType', 'IsAgentInteraction']
 AI_APP_HEADER = ['Id', 'UserId', 'CreationDate', 'CreationTime', 'Operation', 'Workload', 'AppHost', 'AgentId',
                  'AgentName', 'ContextType', 'ThreadId', 'PromptCount', 'ResponseCount', 'EventCount', 'IsAgent']
+CALL_HEADER = ['Id', 'UserId', 'CreationDate', 'CreationTime', 'Operation', 'SourceOperation', 'Workload', 'CallId',
+               'MeetingDetailId', 'CommunicationType', 'CommunicationSubType', 'ActivityDate', 'JoinTime', 'LeaveTime',
+               'DurationSeconds', 'ScreenShareCount', 'ScreenShareSeconds']
 
 OP_RENAME = {'FileViewed': 'FileAccessed', 'MeetingParticipantJoined': 'MeetingParticipantDetail',
              'ConnectedAIAppInteraction': 'AIAppInteraction'}
+# Teams participant records (after renaming) that carry join/leave times and screen-share sessions.
+CALL_OPS = ['CallParticipantDetail', 'MeetingParticipantDetail']
+# Kept out of the rollup: the template's processor never saw them, so its numbers stay unchanged.
+CALL_ONLY_OPS = ['CallParticipantDetail']
 AGENT_APPHOSTS = ['agent', 'copilotstudio', 'declarativeagent', 'customengineagent']
 EVENT_ROW_CAP = 1000
 
@@ -164,6 +179,13 @@ COPILOT_SCHEMA = StructType(
        StructField('Contexts', ArrayType(StructType([StructField('Type', _S), StructField('Items', ArrayType(_S))])))]
     + [StructField(c, ArrayType(_S)) for c in ('AccessedResources', 'SensitivityLabels', 'AISystemPlugin',
                                               'ModelTransparencyDetails')])
+# Parsed separately so a malformed call field never changes which records the rollup keeps.
+CALL_SCHEMA = StructType(
+    [StructField(c, _S) for c in ('CallId', 'MeetingDetailId', 'CommunicationType', 'CommunicationSubType',
+                                  'JoinTime', 'LeaveTime')]
+    + [StructField('ArtifactsShared', ArrayType(StructType([StructField('ArtifactShareSessions', ArrayType(
+        StructType([StructField('StartTimestamp', _S), StructField('EndTimestamp', _S)])))])))])
+_ISO = r'^\s*(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})'
 
 
 def _norm(c: Column) -> Column:
@@ -215,6 +237,20 @@ def _creation_time(c: Column) -> Column:
              .otherwise(raw))
 
 
+def _iso_utc(c: Column) -> Column:
+    """Audit UTC timestamp (any fraction, optional Z) -> 'YYYY-MM-DDTHH:MM:SSZ'; '' when not a timestamp."""
+    d, t = F.regexp_extract(c, _ISO, 1), F.regexp_extract(c, _ISO, 2)
+    return F.when(d != '', F.concat(d, F.lit('T'), t, F.lit('Z'))).otherwise(F.lit(''))
+
+
+def _seconds_between(start: Column, end: Column) -> Column:
+    """Whole seconds between two _iso_utc values; null when either is missing or end is before start."""
+    fmt = F.lit("yyyy-MM-dd'T'HH:mm:ssX")
+    s = F.call_function('try_to_timestamp', start, fmt).cast('long')
+    e = F.call_function('try_to_timestamp', end, fmt).cast('long')
+    return F.when(e >= s, e - s)
+
+
 def parse_audit(raw: DataFrame) -> DataFrame:
     """Staged Graph audit records -> one row per kept record with the rollup keys and counts."""
     ad = F.from_json('auditData', AUDIT_SCHEMA)
@@ -257,9 +293,32 @@ def parse_audit(raw: DataFrame) -> DataFrame:
             .withColumn('ThreadId', F.when(hc, _norm(c['ThreadId'])).otherwise(''))
             .withColumn('PromptCount', F.when(hc, _size(F.filter(c['Messages'], lambda m: m['isPrompt']))).otherwise(0).cast('long'))
             .withColumn('ResponseCount', F.when(hc, _size(F.filter(c['Messages'], lambda m: ~m['isPrompt']))).otherwise(0).cast('long')))
+    is_call = F.col('Operation').isin(CALL_OPS)
+    k = F.col('_call')
+    shares = F.flatten(F.filter(F.transform(k['ArtifactsShared'], lambda x: x['ArtifactShareSessions']),
+                                lambda x: x.isNotNull()))
+    df = (df.withColumn('_call', F.when(is_call, F.from_json('auditData', CALL_SCHEMA)))
+            .withColumn('CallId', _norm(k['CallId']))
+            .withColumn('MeetingDetailId', _norm(k['MeetingDetailId']))
+            .withColumn('CommunicationType', _norm(k['CommunicationType']))
+            .withColumn('CommunicationSubType', _norm(k['CommunicationSubType']))
+            .withColumn('JoinTime', _iso_utc(k['JoinTime']))
+            .withColumn('LeaveTime', _iso_utc(k['LeaveTime']))
+            # Participant records are logged hours after the call, so the activity day comes from the join time.
+            .withColumn('ActivityDate', F.when(F.col('JoinTime') != '', F.concat(F.substring('JoinTime', 1, 10),
+                                                                                 F.lit('T00:00:00.000Z')))
+                                         .otherwise(F.col('CreationDate')))
+            .withColumn('DurationSeconds', _seconds_between(F.col('JoinTime'), F.col('LeaveTime')))
+            .withColumn('ScreenShareCount', _size(shares).cast('long'))
+            .withColumn('ScreenShareSeconds', F.coalesce(F.aggregate(
+                shares, F.lit(0).cast('long'), lambda acc, s: acc + F.coalesce(
+                    _seconds_between(_iso_utc(s['StartTimestamp']), _iso_utc(s['EndTimestamp'])), F.lit(0).cast('long'))),
+                F.lit(0).cast('long'))))
     return df.select('id', 'UserKey', 'UserId', 'CreationDate', 'SourceOperation', 'Operation', 'Workload', 'SourceFileExtension', 'AppHost',
                      'AgentId', 'AgentName', 'ContextType', 'CreationTime', 'EventCount', 'ItemsAccessedCount',
-                     'IsAgent', 'HasCopilotData', 'ThreadId', 'PromptCount', 'ResponseCount')
+                     'IsAgent', 'HasCopilotData', 'ThreadId', 'PromptCount', 'ResponseCount',
+                     'CallId', 'MeetingDetailId', 'CommunicationType', 'CommunicationSubType', 'ActivityDate',
+                     'JoinTime', 'LeaveTime', 'DurationSeconds', 'ScreenShareCount', 'ScreenShareSeconds')
 '''
 
 READ_MD = '''
@@ -294,14 +353,15 @@ AGG_MD = '''
 
 Same grouping as the processor's `run_rollup`: the *Rollup* key is user, day, operation, workload, file extension, app host,
 agent and context type. AI-app interactions are kept one row per audit record in their own tables; the template rolls them
-up together with `Copilot_Interactions_Parsed` and derives *Session Stats* from them.
+up together with `Copilot_Interactions_Parsed` and derives *Session Stats* from them. Teams call and meeting participant
+records also go one row per record to the call table (`CallParticipantDetail` only there).
 '''
 
 AGG_CELL = '''
 _GROUP = ['UserKey', 'CreationDate', 'Operation', 'Workload', 'SourceFileExtension', 'AppHost',
           'AgentId', 'AgentName', 'ContextType']
 _ct = F.when(F.col('CreationTime') != '', F.col('CreationTime'))
-rollup = (recs.where(~F.col('Operation').isin('CopilotInteraction', 'AIAppInteraction')).groupBy(*_GROUP).agg(
+rollup = (recs.where(~F.col('Operation').isin('CopilotInteraction', 'AIAppInteraction', *CALL_ONLY_OPS)).groupBy(*_GROUP).agg(
             F.min('UserId').alias('UserId'),
             F.sum('EventCount').alias('EventCount'),
             F.sum('ItemsAccessedCount').alias('ItemsAccessedCount'),
@@ -320,12 +380,15 @@ def ai_app_records(source_operation):
 
 connected_ai = ai_app_records('ConnectedAIAppInteraction')
 ai_app = ai_app_records('AIAppInteraction')
+
+# One row per Teams call / meeting participant record with its time in the call and screen-share sessions.
+calls = recs.where(F.col('Operation').isin(CALL_OPS)).withColumn('Id', F.col('id')).select(*CALL_HEADER)
 '''
 
 WRITE_MD = '''
 ## 9. Write to Lakehouse Delta tables
 
-Backfill overwrites all three tables. Incremental re-reads whole days from `REPLACE_FROM`, so it deletes those days and appends the fresh rollup — re-running is safe.
+Backfill overwrites all four tables. Incremental re-reads whole days from `REPLACE_FROM`, so it deletes those days and appends the fresh rollup — re-running is safe.
 '''
 
 WRITE_CELL = '''
@@ -338,7 +401,8 @@ def write_days(df, table):
     df.write.format('delta').mode('overwrite').option('overwriteSchema', 'true').saveAsTable(table)
     return 'overwrite'
 
-for _df, _table in ((rollup, OUTPUT_TABLE), (connected_ai, CONNECTED_AI_TABLE), (ai_app, AI_APP_TABLE)):
+for _df, _table in ((rollup, OUTPUT_TABLE), (connected_ai, CONNECTED_AI_TABLE), (ai_app, AI_APP_TABLE),
+                    (calls, CALL_TABLE)):
     _how = write_days(_df, _table)
     print(f'✓ {_table}: {spark.table(_table).count():,} rows ({_how})')
 recs.unpersist()
@@ -347,7 +411,7 @@ recs.unpersist()
 VERIFY_MD = '''
 ## 10. Verify
 
-Event counts by workload and operation for the last day loaded.
+Event counts by workload and operation for the last day loaded, then Teams call and meeting time by operation.
 '''
 
 VERIFY_CELL = '''
@@ -355,6 +419,11 @@ _last = spark.table(OUTPUT_TABLE).agg(F.max('CreationDate')).collect()[0][0]
 (spark.table(OUTPUT_TABLE).where(F.col('CreationDate') == _last)
     .groupBy('Workload', 'Operation').agg(F.sum('EventCount').alias('Events'), F.sum('ItemsAccessedCount').alias('ItemsAccessed'))
     .orderBy(F.desc('Events')).show(30, truncate=False))
+(spark.table(CALL_TABLE).groupBy('Operation', 'CommunicationType')
+    .agg(F.count(F.lit(1)).alias('Records'), F.countDistinct('UserId').alias('Users'),
+         F.round(F.sum('DurationSeconds') / 3600, 1).alias('Hours'),
+         F.sum('ScreenShareCount').alias('ScreenShares'), F.round(F.sum('ScreenShareSeconds') / 3600, 1).alias('ScreenShareHours'))
+    .orderBy(F.desc('Records')).show(30, truncate=False))
 '''
 
 
@@ -372,6 +441,7 @@ def build_ingester(base: dict) -> list[dict]:
                 "OUTPUT_TABLE  = 'dbo.m365_usage_rollup'              # template 'Rollup' input\n"
                 "CONNECTED_AI_TABLE = 'dbo.connected_ai_app_interactions'  # ConnectedAIAppInteraction records\n"
                 "AI_APP_TABLE  = 'dbo.ai_app_interactions'           # AIAppInteraction records\n"
+                "CALL_TABLE    = 'dbo.m365_teams_call_participation' # Teams call / meeting participant records\n"
                 f"OPERATIONS    = [                                    # audit operations the template reads\n{ops},\n]")
     cfg = patch(cfg, "# 'incremental' = requery the trailing LOOKBACK_DAYS (for late arrivals) and merge by stable Id.",
                 "# 'incremental' = requery whole days from the trailing LOOKBACK_DAYS (late arrivals) and replace them.")
