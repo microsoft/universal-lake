@@ -16,9 +16,14 @@ At the end, `promote` prints **gold coverage per model**, e.g. `consumption 12/1
 To see where every table went, run this in the Lakehouse's SQL analytics endpoint:
 
 ```sql
-SELECT table_name, layer, status, rows, promoted_at FROM (
-  SELECT *, ROW_NUMBER() OVER (PARTITION BY table_name ORDER BY promoted_at DESC) rn FROM ops.table_layers
-) WHERE rn = 1 ORDER BY layer, table_name;
+SELECT table_name, layer, status, rows, promoted_at
+FROM (
+    SELECT *,
+           ROW_NUMBER() OVER (PARTITION BY table_name ORDER BY promoted_at DESC) AS rn
+    FROM ops.table_layers
+) AS latest
+WHERE rn = 1
+ORDER BY layer, table_name;
 ```
 
 | Layer | Rule |
